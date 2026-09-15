@@ -387,4 +387,19 @@ Vigencia NEW: `2000-01-01` .. `2099-12-31`. El setup también limpia el leftover
 
 ## Runtime
 
-Sigue requiriendo QA `korventis_pg_lock` en `korventis_fiscal_test`. No PASS local. Versión `18.0.1.2.3` (solo test/docs/manifest).
+QA final (`d2a2457ac83fa7cc14612ffa150ff25a5823e97c`, `18.0.1.2.3`) ejecutado en `testkorventis0Doo` sobre la base disposable `korventis_fiscal_test`.
+
+**PHASE 1.2 = FULL GREEN**
+
+- Migración BIGINT: PASS.
+- Esquema PostgreSQL `int8`: PASS.
+- Constraints, suite fiscal estándar y boundary tests: PASS.
+- `korventis_pg_lock`: PASS (`0 failed, 0 error(s) of 1 tests`, `ODOO_EXIT_CODE=0`).
+- Backends PostgreSQL independientes: main `121714`, Worker B `121722`, Worker A `121723`.
+- Ambos workers ejecutaron `NcfService.allocate()` real con `SELECT ... FOR UPDATE`.
+- Worker B: raw `8000000001`, fiscal number `E328000000001`, COMMIT.
+- Worker A: raw `8000000002`, fiscal number `E328000000002`, COMMIT.
+- 0 worker errors y 0 deadlocks.
+- Cleanup confirmó eliminación de la secuencia fixture.
+
+Código productivo, `NcfService`, BIGINT, ACL, record rules y modelos fiscales: sin cambios en el cierre documental.
