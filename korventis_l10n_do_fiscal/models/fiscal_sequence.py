@@ -64,8 +64,31 @@ class KorventisFiscalSequence(models.Model):
         if self.document_type_id:
             self.prefix = self.document_type_id.prefix
 
+    def _advisory_lock_pair(self, company_id, type_id):
+        """Serialize range writes per company+type. Session lock, released at COMMIT/ROLLBACK.
+
+        Does not lock the whole table. Residual: bypasses if rows are inserted via raw SQL.
+        Requires PostgreSQL hashtext() (built-in, not an extra extension).
+        """
+        self.env.cr.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))",
+            ("korventis.fiscal.sequence.%s.%s" % (company_id, type_id),),
+        )
+
+    def _has_consumed_numbers(self):
+        self.ensure_one()
+        return bool(
+            self.env["korventis.fiscal.document"].search_count(
+                [
+                    ("sequence_id", "=", self.id),
+                    ("state", "in", ("reserved", "issued", "cancelled")),
+                ]
+            )
+        )
+
     @api.model_create_multi
     def create(self, vals_list):
+        records = self.browse()
         for vals in vals_list:
             if vals.get("document_type_id") and not vals.get("prefix"):
                 dtype = self.env["korventis.fiscal.document.type"].browse(
@@ -74,7 +97,12 @@ class KorventisFiscalSequence(models.Model):
                 vals["prefix"] = dtype.prefix
             if vals.get("range_start") and not vals.get("next_number"):
                 vals["next_number"] = vals["range_start"]
-        return super().create(vals_list)
+            company_id = vals.get("company_id") or self.env.company.id
+            type_id = vals.get("document_type_id")
+            if company_id and type_id:
+                self._advisory_lock_pair(company_id, type_id)
+            records |= super().create([vals])
+        return records
 
     @api.constrains("prefix", "document_type_id")
     def _check_prefix_matches_type(self):
@@ -138,17 +166,30 @@ class KorventisFiscalSequence(models.Model):
         return start_a <= end_b and start_b <= end_a
 
     def write(self, vals):
-        if not self.env.su:
-            protected = {"range_start", "range_end", "prefix", "document_type_id"}
-            if protected.intersection(vals) and any(
-                rec.env["korventis.fiscal.document"].search_count(
-                    [("sequence_id", "=", rec.id), ("state", "in", ("reserved", "issued"))]
-                )
-                for rec in self
-            ):
+        protected_after_use = {"range_start", "range_end", "prefix", "document_type_id", "company_id"}
+        for rec in self:
+            rec._advisory_lock_pair(rec.company_id.id, rec.document_type_id.id)
+            new_company = vals.get("company_id") or rec.company_id.id
+            new_type = vals.get("document_type_id") or rec.document_type_id.id
+            if (new_company, new_type) != (rec.company_id.id, rec.document_type_id.id):
+                rec._advisory_lock_pair(new_company, new_type)
+            used = rec._has_consumed_numbers()
+            if used and protected_after_use.intersection(vals):
                 raise UserError(
                     _(
-                        "Cannot change range bounds or type of a sequence that already issued fiscal numbers."
+                        "Cannot change range bounds, company or type of a sequence that already "
+                        "issued or reserved fiscal numbers. Administrative rewind is not implemented."
                     )
                 )
+            if "next_number" in vals and used:
+                new_next = vals["next_number"]
+                if new_next < rec.next_number:
+                    raise UserError(
+                        _(
+                            "next_number cannot be rewound from %(old)s to %(new)s after the sequence "
+                            "has been used. The counter is monotonic.",
+                            old=rec.next_number,
+                            new=new_next,
+                        )
+                    )
         return super().write(vals)

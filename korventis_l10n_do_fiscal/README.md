@@ -34,11 +34,21 @@ Se reutiliza `res.partner.vat`. Si el país es DO, se exige longitud 9 (RNC) u 1
 
 ## Tests
 
+Suite segura (rollback, apta para cualquier BD incluyendo QA `korventis` / `baruchcafe`):
+
 ```
 odoo-bin -d <db> -i korventis_l10n_do_fiscal --test-enable --stop-after-init
 ```
 
-`test_concurrent_sequence_allocation` hace `commit()` para abrir dos conexiones PostgreSQL. Ejecutar en base de pruebas.
+No ejecuta `korventis_pg_lock` (tag `-standard`).
+
+Test concurrente aislado (**solo BD desechable**, p. ej. conceptual `korventis_fiscal_test`; no usar `korventis` ni `baruchcafe`):
+
+```
+odoo-bin -d korventis_fiscal_test --test-enable --test-tags=korventis_pg_lock --stop-after-init
+```
+
+Esa base **no** se crea en esta fase.
 
 ## Licencia
 

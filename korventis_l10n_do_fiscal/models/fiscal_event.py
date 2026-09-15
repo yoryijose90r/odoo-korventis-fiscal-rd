@@ -1,6 +1,8 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+from odoo.addons.korventis_l10n_do_fiscal.services.internal import INTERNAL_WRITE_TOKEN
+
 
 class KorventisFiscalEvent(models.Model):
     _name = "korventis.fiscal.event"
@@ -12,7 +14,7 @@ class KorventisFiscalEvent(models.Model):
         "korventis.fiscal.document",
         required=True,
         index=True,
-        ondelete="restrict",
+        ondelete="cascade",
     )
     company_id = fields.Many2one(
         related="document_id.company_id",
@@ -49,8 +51,20 @@ class KorventisFiscalEvent(models.Model):
         raise UserError(_("Fiscal events are append-only and cannot be modified."))
 
     def unlink(self):
-        raise UserError(_("Fiscal events cannot be deleted."))
+        for rec in self:
+            if rec.document_id and rec.document_id.state != "draft":
+                raise UserError(
+                    _("Fiscal events of reserved, issued or cancelled documents cannot be deleted.")
+                )
+        return super().unlink()
 
     @api.model_create_multi
     def create(self, vals_list):
+        uid = self.env.uid
+        for vals in vals_list:
+            vals.pop("company_id", None)
+            vals["user_id"] = uid
+            if self.env.context.get("_korventis_internal_write") is not INTERNAL_WRITE_TOKEN:
+                if not self.env.su:
+                    raise UserError(_("Fiscal events can only be created by the fiscal service."))
         return super().create(vals_list)

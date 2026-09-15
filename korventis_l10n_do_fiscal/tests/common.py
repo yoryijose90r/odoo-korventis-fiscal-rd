@@ -51,6 +51,16 @@ class KorventisFiscalCommon(AccountTestInvoicingCommon):
                 "next_number": 1,
             }
         )
+        cls.sequence_e34 = cls.env["korventis.fiscal.sequence"].create(
+            {
+                "company_id": cls.company.id,
+                "document_type_id": cls.type_e34.id,
+                "prefix": "E34",
+                "range_start": 1,
+                "range_end": 100,
+                "next_number": 1,
+            }
+        )
 
     def _create_invoice(self, partner, doc_type=None, extra_vals=None):
         vals = {

@@ -10,7 +10,7 @@ class AccountMove(models.Model):
     korventis_fiscal_document_type_id = fields.Many2one(
         "korventis.fiscal.document.type",
         string="Fiscal document type",
-        copy=True,
+        copy=False,
         help="Snapshot for this invoice. Not recalculated from the partner after it is set.",
         ondelete="restrict",
     )
@@ -35,13 +35,19 @@ class AccountMove(models.Model):
         for move in self:
             doc = move.korventis_fiscal_document_id
             move.korventis_fiscal_type_locked = bool(
-                doc and doc.state in ("reserved", "issued")
+                doc and doc.state in ("reserved", "issued", "cancelled")
             )
+
+    def _korventis_e34(self):
+        return self.env.ref("korventis_l10n_do_fiscal.document_type_e34")
 
     @api.onchange("partner_id")
     def _onchange_partner_korventis_fiscal_type(self):
         for move in self:
             if move.korventis_fiscal_type_locked:
+                continue
+            if move.move_type == "out_refund":
+                move.korventis_fiscal_document_type_id = self._korventis_e34()
                 continue
             if move.korventis_fiscal_document_type_id:
                 continue
@@ -54,7 +60,12 @@ class AccountMove(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         Partner = self.env["res.partner"]
+        e34 = self._korventis_e34()
         for vals in vals_list:
+            move_type = vals.get("move_type")
+            if move_type == "out_refund":
+                vals["korventis_fiscal_document_type_id"] = e34.id
+                continue
             if not vals.get("korventis_fiscal_document_type_id") and vals.get("partner_id"):
                 partner = Partner.browse(vals["partner_id"]).commercial_partner_id
                 if partner.korventis_fiscal_document_type_id:
@@ -64,26 +75,36 @@ class AccountMove(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        old_types = {}
+        if "partner_id" in vals:
+            for move in self:
+                if move.korventis_fiscal_type_locked and vals["partner_id"] != move.partner_id.id:
+                    raise UserError(
+                        _("The partner cannot be changed after fiscal emission.")
+                    )
         if "korventis_fiscal_document_type_id" in vals:
             for move in self:
                 if move.korventis_fiscal_type_locked:
                     raise UserError(
                         _("The fiscal document type cannot be changed after fiscal emission.")
                     )
-                old_types[move.id] = move.korventis_fiscal_document_type_id
-        res = super().write(vals)
-        if "korventis_fiscal_document_type_id" in vals:
-            for move in self:
-                old = old_types.get(move.id)
-                new = move.korventis_fiscal_document_type_id
-                if old != new:
-                    move.korventis_fiscal_document_id._korventis_log_event(
-                        "manual_change",
-                        old_value=old.code if old else False,
-                        new_value=new.code if new else False,
-                    ) if move.korventis_fiscal_document_id else None
-        return res
+        if (
+            len(self) == 1
+            and "partner_id" in vals
+            and "korventis_fiscal_document_type_id" not in vals
+            and not self.korventis_fiscal_type_locked
+            and self.state == "draft"
+        ):
+            if self.move_type == "out_refund":
+                if not self.korventis_fiscal_document_type_id:
+                    vals = dict(vals, korventis_fiscal_document_type_id=self._korventis_e34().id)
+            elif not self.korventis_fiscal_document_type_id:
+                partner = self.env["res.partner"].browse(vals["partner_id"]).commercial_partner_id
+                if partner.korventis_fiscal_document_type_id:
+                    vals = dict(
+                        vals,
+                        korventis_fiscal_document_type_id=partner.korventis_fiscal_document_type_id.id,
+                    )
+        return super().write(vals)
 
     def _korventis_should_issue(self):
         self.ensure_one()
@@ -111,7 +132,7 @@ class AccountMove(models.Model):
     def button_draft(self):
         for move in self:
             doc = move.korventis_fiscal_document_id
-            if doc and doc.state in ("reserved", "issued"):
+            if doc and doc.state in ("reserved", "issued", "cancelled"):
                 raise UserError(
                     _(
                         "Invoice %(move)s has fiscal document %(number)s and cannot be reset to draft. "
@@ -126,7 +147,7 @@ class AccountMove(models.Model):
         res = super().button_cancel()
         service = NcfService(self.env)
         for move in self:
-            if move.korventis_fiscal_document_id and move.korventis_fiscal_document_id.state != "cancelled":
+            if move.korventis_fiscal_document_id and move.korventis_fiscal_document_id.state == "issued":
                 service.cancel_document(
                     move.korventis_fiscal_document_id,
                     notes="Cancelled with account.move",

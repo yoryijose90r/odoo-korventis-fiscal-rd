@@ -21,7 +21,7 @@
         <field name="arch" type="xml">
             <form>
                 <header>
-                    <button name="action_cancel" type="object" string="Cancel" invisible="state == 'cancelled'"/>
+                    <button name="action_cancel" type="object" string="Cancel" invisible="state != 'issued'"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,reserved,issued,cancelled"/>
                 </header>
                 <sheet>
@@ -36,6 +36,15 @@
                         <group>
                             <field name="company_id" groups="base.group_multi_company"/>
                             <field name="partner_id"/>
+                            <field name="partner_name"/>
+                            <field name="partner_vat"/>
+                            <field name="partner_identification_type"/>
+                            <field name="partner_street"/>
+                            <field name="partner_street2"/>
+                            <field name="partner_city"/>
+                            <field name="partner_state"/>
+                            <field name="partner_zip"/>
+                            <field name="partner_country"/>
                             <field name="move_id"/>
                             <field name="issue_datetime"/>
                             <field name="currency_id"/>

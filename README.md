@@ -19,10 +19,12 @@ Arquitectura prevista:
 
 Estado:
 
-En desarrollo.
+En desarrollo (FASE 1.1 hardening en `feature/fiscal-core`).
 
 Entorno inicial:
 
 QA / Testing.
 
 No desplegar automáticamente en producción.
+
+Política de tests: las bases `korventis` y `baruchcafe` no son desechables. La suite estándar no hace `commit()` persistente. El tag `korventis_pg_lock` exige una BD temporal (concepto `korventis_fiscal_test`, no creada aquí). Ver `docs/PHASE_1_IMPLEMENTATION.md`.

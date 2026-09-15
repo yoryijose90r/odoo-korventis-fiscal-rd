@@ -5,7 +5,7 @@
         <field name="model">account.move</field>
         <field name="inherit_id" ref="account.view_move_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='partner_id']" position="after">
+            <xpath expr="//sheet//field[@name='partner_id'][@widget='res_partner_many2one']" position="after">
                 <field name="korventis_fiscal_type_locked" invisible="1"/>
                 <field name="korventis_fiscal_document_type_id"
                        readonly="korventis_fiscal_type_locked"/>
