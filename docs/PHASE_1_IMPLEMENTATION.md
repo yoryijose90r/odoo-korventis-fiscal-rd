@@ -403,3 +403,65 @@ QA final (`d2a2457ac83fa7cc14612ffa150ff25a5823e97c`, `18.0.1.2.3`) ejecutado en
 - Cleanup confirmó eliminación de la secuencia fixture.
 
 Código productivo, `NcfService`, BIGINT, ACL, record rules y modelos fiscales: sin cambios en el cierre documental.
+
+---
+
+# FASE 1.3 — Factura fiscal manual E31/E32
+
+Fecha: 2026-09-15
+Rama: `feature/manual-fiscal-invoice`
+Base: `test` en `d857b9fe6e103ba31e82535b7db1926b5bd4e063`
+Versión: `18.0.1.3.0`
+
+## Flujo
+
+El partner mantiene un tipo fiscal predeterminado asignable. Los tipos de cliente
+permitidos son E31, E32, E44, E45 y E46; E33, E34, E41, E43 y E47 no son
+clasificaciones normales de cliente. Al crear la factura, `account.move` copia el
+tipo como snapshot. Cambios posteriores del partner no modifican la factura ni el
+documento fiscal emitido.
+
+Una factura draft no crea `korventis.fiscal.document` ni consume secuencia. En
+`account.move._post()`, primero se ejecuta el posting contable de Odoo y, dentro de
+la misma transacción, se llama `NcfService.create_and_issue_for_move()`. El servicio:
+
+1. valida compañía, dirección y tipo fiscal;
+2. busca una secuencia activa, vigente y con disponibilidad para company + tipo;
+3. usa `NcfService.allocate()` (`SELECT ... FOR UPDATE`);
+4. crea un único `korventis.fiscal.document` con snapshots de partner, importes y tipo;
+5. enlaza `account.move.korventis_fiscal_document_id`;
+6. pasa el documento de `reserved` a `issued`.
+
+Si falta rango válido, se lanza `UserError` y la transacción completa se revierte:
+la factura permanece draft y no se fabrica ningún número. `issued` significa
+emisión fiscal interna Korventis; no aceptación DGII.
+
+La idempotencia se protege con el enlace existente en `account.move`, el retorno
+temprano de `reserve_for_move()` y `UNIQUE(move_id)` en el documento fiscal. Un
+retry sobre una factura ya fiscalizada devuelve el mismo documento y no consume
+otro número.
+
+## Interfaz
+
+La vista heredada `account.view_move_form` agrega mediante xpath la pestaña
+**Información Fiscal RD** para documentos de venta:
+
+- Tipo de comprobante.
+- Número fiscal.
+- Estado fiscal.
+- Documento fiscal relacionado.
+
+El tipo queda readonly después del posting o de la emisión. Las notas de crédito
+mantienen E34 automático y no lo presentan como clasificación normal de cliente.
+
+## Cobertura
+
+Se agregan pruebas explícitas de draft sin consumo, emisión E31, emisión E32,
+documento único e idempotencia, snapshot histórico de clasificación, falta de
+secuencia, aislamiento de secuencias por compañía y campos relacionados visibles
+desde `account.move`. Se conserva la prueba existente de posting por contador sin
+permisos de Fiscal Manager.
+
+No se implementan XML/e-CF, firma, QR, TrackID, transmisión DGII, POS ni reportes
+606/607/608. Runtime QA pendiente; esta iteración solo recibe validación estática
+local antes de revisión.

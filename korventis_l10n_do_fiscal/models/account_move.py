@@ -26,6 +26,12 @@ class AccountMove(models.Model):
         string="e-NCF / NCF",
         store=False,
     )
+    korventis_fiscal_state = fields.Selection(
+        related="korventis_fiscal_document_id.state",
+        string="Fiscal status",
+        store=False,
+        readonly=True,
+    )
     korventis_fiscal_type_locked = fields.Boolean(
         compute="_compute_korventis_fiscal_type_locked",
     )

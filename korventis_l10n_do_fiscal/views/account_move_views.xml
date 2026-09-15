@@ -7,10 +7,24 @@
         <field name="arch" type="xml">
             <xpath expr="//sheet//field[@name='partner_id'][@widget='res_partner_many2one']" position="after">
                 <field name="korventis_fiscal_type_locked" invisible="1"/>
-                <field name="korventis_fiscal_document_type_id"
-                       readonly="korventis_fiscal_type_locked"/>
-                <field name="korventis_fiscal_document_id" readonly="1"/>
-                <field name="korventis_fiscal_number" readonly="1"/>
+            </xpath>
+            <xpath expr="//sheet/notebook" position="inside">
+                <page string="Información Fiscal RD"
+                      name="korventis_fiscal_information"
+                      invisible="move_type not in ('out_invoice', 'out_refund', 'out_receipt')">
+                    <group>
+                        <group>
+                            <field name="korventis_fiscal_document_type_id"
+                                   readonly="korventis_fiscal_type_locked or state != 'draft' or move_type == 'out_refund'"
+                                   domain="[('direction', '=', 'sale'), ('active', '=', True), '|', ('partner_assignable', '=', True), ('code', '=', 'E34')]"/>
+                            <field name="korventis_fiscal_number" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="korventis_fiscal_state" readonly="1"/>
+                            <field name="korventis_fiscal_document_id" readonly="1"/>
+                        </group>
+                    </group>
+                </page>
             </xpath>
         </field>
     </record>

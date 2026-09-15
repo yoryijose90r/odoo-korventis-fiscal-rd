@@ -18,6 +18,11 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertFalse(self.type_e33.partner_assignable)
         self.assertFalse(self.type_e34.partner_assignable)
         self.assertFalse(self.type_e41.partner_assignable)
+        self.assertFalse(self.type_e43.partner_assignable)
+        self.assertTrue(self.type_e44.partner_assignable)
+        self.assertTrue(self.type_e45.partner_assignable)
+        self.assertTrue(self.type_e46.partner_assignable)
+        self.assertFalse(self.type_e47.partner_assignable)
 
     def test_partner_default_assignable(self):
         self.assertEqual(self.partner_final.korventis_fiscal_document_type_id, self.type_e32)
@@ -80,6 +85,18 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertEqual(doc.partner_vat, "101672919")
         self.assertEqual(doc.partner_name, "Cliente ABC")
         self.assertEqual(doc.partner_id.vat.replace("-", "").replace(" ", ""), "132000001")
+
+    def test_partner_classification_change_does_not_mutate_issued_invoice(self):
+        move = self._create_invoice(self.partner_rnc)
+        move.action_post()
+        document = move.korventis_fiscal_document_id
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e31)
+        self.assertEqual(document.document_type_id, self.type_e31)
+
+        self.partner_rnc.korventis_fiscal_document_type_id = self.type_e45
+
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e31)
+        self.assertEqual(document.document_type_id, self.type_e31)
 
     def test_sequence_normal_and_format(self):
         service = NcfService(self.env)
@@ -159,6 +176,114 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertEqual(doc.fiscal_number, "E310000000001")
         self.assertIn("reserved", doc.event_ids.mapped("event_type"))
         self.assertIn("issued", doc.event_ids.mapped("event_type"))
+
+    def test_draft_invoice_does_not_consume_sequence(self):
+        next_number = self.sequence_e31.next_number
+        move = self._create_invoice(self.partner_rnc)
+
+        self.assertEqual(move.state, "draft")
+        self.assertFalse(move.korventis_fiscal_document_id)
+        self.assertEqual(self.sequence_e31.next_number, next_number)
+        self.assertFalse(
+            self.env["korventis.fiscal.document"].search(
+                [("move_id", "=", move.id)]
+            )
+        )
+
+    def test_manual_e31_invoice_issues_expected_fiscal_document(self):
+        move = self._create_invoice(self.partner_rnc)
+        self.assertEqual(self.sequence_e31.next_number, 1)
+
+        move.action_post()
+
+        document = move.korventis_fiscal_document_id
+        self.assertEqual(self.sequence_e31.next_number, 2)
+        self.assertEqual(document.document_type_id, self.type_e31)
+        self.assertEqual(document.state, "issued")
+        self.assertEqual(document.fiscal_number, "E310000000001")
+        self.assertEqual(move.korventis_fiscal_number, document.fiscal_number)
+        self.assertEqual(move.korventis_fiscal_state, "issued")
+
+    def test_manual_e32_invoice_issues_expected_fiscal_document(self):
+        move = self._create_invoice(self.partner_final)
+        self.assertEqual(self.sequence_e32.next_number, 1)
+
+        move.action_post()
+
+        document = move.korventis_fiscal_document_id
+        self.assertEqual(self.sequence_e32.next_number, 2)
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e32)
+        self.assertEqual(document.document_type_id, self.type_e32)
+        self.assertEqual(document.state, "issued")
+        self.assertEqual(document.fiscal_number, "E320000000001")
+        self.assertEqual(move.korventis_fiscal_number, document.fiscal_number)
+
+    def test_posting_and_retry_create_exactly_one_fiscal_document(self):
+        move = self._create_invoice(self.partner_rnc)
+        move.action_post()
+        first_document = move.korventis_fiscal_document_id
+        next_number = self.sequence_e31.next_number
+        service = NcfService(self.env)
+
+        retry_document = service.create_and_issue_for_move(move)
+        second_retry_document = service.create_and_issue_for_move(move)
+
+        self.assertEqual(retry_document, first_document)
+        self.assertEqual(second_retry_document, first_document)
+        self.assertEqual(self.sequence_e31.next_number, next_number)
+        self.assertEqual(
+            self.env["korventis.fiscal.document"].search_count(
+                [("move_id", "=", move.id)]
+            ),
+            1,
+        )
+
+    def test_missing_sequence_blocks_fiscal_posting(self):
+        move = self._create_invoice(self.partner_rnc, doc_type=self.type_e45)
+
+        with self.assertRaises(UserError) as caught:
+            move.action_post()
+
+        move.invalidate_recordset()
+        self.assertIn("No active fiscal sequence", str(caught.exception))
+        self.assertEqual(move.state, "draft")
+        self.assertFalse(move.korventis_fiscal_document_id)
+
+    def test_sequence_from_other_company_is_not_used(self):
+        company_b = self.env["res.company"].sudo().create(
+            {
+                "name": "Korventis Isolated Sequence Company",
+                "country_id": self.do.id,
+                "korventis_fiscal_enabled": True,
+            }
+        )
+        sequence_b = (
+            self.env["korventis.fiscal.sequence"]
+            .sudo()
+            .with_company(company_b)
+            .create(
+                {
+                    "company_id": company_b.id,
+                    "document_type_id": self.type_e44.id,
+                    "prefix": "E44",
+                    "range_start": 1,
+                    "range_end": 10,
+                    "next_number": 1,
+                }
+            )
+        )
+        move = self._create_invoice(self.partner_rnc, doc_type=self.type_e44)
+
+        with self.assertRaises(UserError) as caught:
+            move.action_post()
+
+        move.invalidate_recordset()
+        sequence_b.invalidate_recordset()
+        self.assertIn(self.company.display_name, str(caught.exception))
+        self.assertNotIn(company_b.display_name, str(caught.exception))
+        self.assertEqual(move.state, "draft")
+        self.assertFalse(move.korventis_fiscal_document_id)
+        self.assertEqual(sequence_b.next_number, 1)
 
     def test_immutability_and_state_machine(self):
         move = self._create_invoice(self.partner_rnc)

@@ -22,7 +22,11 @@ class KorventisFiscalCommon(AccountTestInvoicingCommon):
         cls.type_e33 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e33")
         cls.type_e34 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e34")
         cls.type_e41 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e41")
+        cls.type_e43 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e43")
+        cls.type_e44 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e44")
         cls.type_e45 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e45")
+        cls.type_e46 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e46")
+        cls.type_e47 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e47")
         cls.partner_final = cls.env["res.partner"].create(
             {
                 "name": "Consumidor Final",
