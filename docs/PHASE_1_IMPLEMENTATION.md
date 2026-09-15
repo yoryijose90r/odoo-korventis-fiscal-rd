@@ -271,3 +271,48 @@ Separación de pruebas:
 - Accountant `_post` sin Fiscal Manager: sin cambio.
 
 ACL, CHECK `next_in_range` y código productivo: sin cambios. Versión `18.0.1.1.3`.
+
+---
+
+# FASE 1.2 — BIGINT para secuencial de 10 dígitos
+
+Fecha: 2026-09-15
+
+Runtime QA (`119aafe`, `18.0.1.1.3`): tests estándar 0/0. El test aislado `korventis_pg_lock` falló **antes** de los workers: `range_start/range_end/next_number = 8000000001` → `psycopg2.errors.NumericValueOutOfRange: integer out of range`. Sin residuos.
+
+## Análisis Odoo 18
+
+- ORM anterior: `fields.Integer`.
+- PostgreSQL anterior: `int4` (`Integer._column_type = ('int4', 'int4')` en `odoo/fields.py` 18.0).
+- No existe `fields.BigInt` oficial ni `Integer(bigint=True)` en 18.0-20260908.
+- Mecanismo soportado: subclase de `Integer` con `_column_type = ('int8', 'int8')`. `Field.update_db_column` compara `udt_name` con `column_type[0]` y llama `sql.convert_column` si difieren.
+- No se guardan contadores como string. `fiscal_number` sigue siendo `Char` (`E328000000001`).
+
+Versión **`18.0.1.2.0`**: cambia esquema/capacidad (no es un parche 18.0.1.1.4).
+
+## Constraints
+
+- `range_start >= 0`
+- `range_end` entre 0 y 9,999,999,999
+- `range_start <= range_end`
+- `next_number >= range_start` y `next_number <= range_end + 1`
+
+Semántica de agotamiento **sin cambio**: tras el último número, `next_number = range_end + 1` (puede ser 10,000,000,000, cabe en BIGINT) y `allocate()` falla. No se rebobina.
+
+## Migración
+
+Un solo mecanismo: `-u korventis_l10n_do_fiscal`. Al cambiar `_column_type` de `int4` a `int8`, `Field.update_db_column` llama `sql.convert_column` (`ALTER` widen lossless). No hay `migrations/` paralelo (evitar doble ALTER).
+
+También `korventis_fiscal_document.sequence_number` → int8, porque el secuencial crudo del documento puede superar 2^31-1.
+
+## NcfService
+
+Python `int` ilimitado; formato `f"{raw:010d}"`; e-NCF 13 caracteres; `SELECT … FOR UPDATE` / `next_number + 1` en BIGINT.
+
+## Concurrencia / cleanup
+
+Rango original `8000000001..8000000099`. Workers: dos cursores, Barrier, commits, raws ordenados `{8000000001, 8000000002}`, `next_number` persistido `8000000003`. `unlink()` de `res.company` suele fallar por el partner de compañía; el test intenta unlink y si no, `active=False`. Solo DB desechable.
+
+## XML-RPC
+
+Odoo 18 `Integer.convert_to_read` puede devolver `float` si el valor supera int32 (`MAXINT`). No se cambia el almacenamiento a string ni se añade workaround. El contador sigue siendo BIGINT; `fiscal_number` sigue siendo `Char`. JSON-RPC no tiene esa limitación.

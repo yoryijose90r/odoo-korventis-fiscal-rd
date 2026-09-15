@@ -23,7 +23,9 @@ class NcfService:
 
     def format_fiscal_number(self, prefix, sequence_number, sequence_length):
         number = int(sequence_number)
-        padded = str(number).zfill(sequence_length)
+        if number < 0:
+            raise ValidationError(_("Sequence number cannot be negative."))
+        padded = f"{number:0{int(sequence_length)}d}"
         if len(padded) > sequence_length:
             raise ValidationError(
                 _(

@@ -424,3 +424,40 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertFalse(first.fiscal_number)
         self.assertFalse(second.fiscal_number)
         self.assertNotEqual(first.id, second.id)
+
+    def _sudo_sequence(self, start, end, next_number=None, dtype=None):
+        dtype = dtype or self.type_e45
+        return self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": dtype.id,
+                "prefix": dtype.prefix,
+                "range_start": start,
+                "range_end": end,
+                "next_number": next_number if next_number is not None else start,
+            }
+        )
+
+    def test_ten_digit_sequence_above_int32(self):
+        service = NcfService(self.env)
+        cases = (
+            (2147483647, "E452147483647"),
+            (2147483648, "E452147483648"),
+            (8000000001, "E458000000001"),
+            (9999999999, "E459999999999"),
+        )
+        for raw, expected in cases:
+            seq = self._sudo_sequence(raw, raw)
+            number, allocated = service.allocate(seq, company=self.company)
+            self.assertEqual(allocated, raw)
+            self.assertEqual(number, expected)
+            self.assertEqual(len(number), 13)
+            with self.assertRaises(UserError):
+                service.allocate(seq, company=self.company)
+            self.assertEqual(seq.next_number, raw + 1)
+
+    @mute_logger("odoo.sql_db")
+    def test_reject_eleven_digit_range_end(self):
+        with self.assertRaises(IntegrityError):
+            with self.env.cr.savepoint():
+                self._sudo_sequence(1, 10_000_000_000)

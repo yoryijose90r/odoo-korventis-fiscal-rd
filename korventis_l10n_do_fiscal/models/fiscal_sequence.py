@@ -1,6 +1,12 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from odoo.addons.korventis_l10n_do_fiscal.fields import FiscalBigInt
+
+# e-NCF sequential width is 10 digits. Exhausted sequences store range_end + 1
+# (see next_in_range), which may be 10_000_000_000 and still fits in BIGINT.
+FISCAL_SEQUENTIAL_MAX = 9_999_999_999
+
 
 class KorventisFiscalSequence(models.Model):
     _name = "korventis.fiscal.sequence"
@@ -23,9 +29,9 @@ class KorventisFiscalSequence(models.Model):
         check_company=False,
     )
     prefix = fields.Char(required=True)
-    range_start = fields.Integer(required=True)
-    range_end = fields.Integer(required=True)
-    next_number = fields.Integer(required=True)
+    range_start = FiscalBigInt(required=True)
+    range_end = FiscalBigInt(required=True)
+    next_number = FiscalBigInt(required=True)
     valid_from = fields.Date()
     valid_until = fields.Date()
     active = fields.Boolean(default=True)
@@ -37,9 +43,14 @@ class KorventisFiscalSequence(models.Model):
             "Range start cannot be greater than range end.",
         ),
         (
-            "range_start_positive",
-            "CHECK(range_start >= 1)",
-            "Range start must be at least 1.",
+            "range_start_non_negative",
+            "CHECK(range_start >= 0)",
+            "Range start cannot be negative.",
+        ),
+        (
+            "range_end_ten_digits",
+            "CHECK(range_end >= 0 AND range_end <= 9999999999)",
+            "Range end must be between 0 and 9,999,999,999 (10 e-NCF digits).",
         ),
         (
             "next_in_range",
@@ -95,7 +106,7 @@ class KorventisFiscalSequence(models.Model):
                     vals["document_type_id"]
                 )
                 vals["prefix"] = dtype.prefix
-            if vals.get("range_start") and not vals.get("next_number"):
+            if "next_number" not in vals and "range_start" in vals:
                 vals["next_number"] = vals["range_start"]
             company_id = vals.get("company_id") or self.env.company.id
             type_id = vals.get("document_type_id")
@@ -103,6 +114,24 @@ class KorventisFiscalSequence(models.Model):
                 self._advisory_lock_pair(company_id, type_id)
             records |= super().create([vals])
         return records
+
+    @api.constrains("range_start", "range_end", "next_number")
+    def _check_ten_digit_bounds(self):
+        for rec in self:
+            if rec.range_start < 0 or rec.range_start > FISCAL_SEQUENTIAL_MAX:
+                raise ValidationError(
+                    _("range_start must be between 0 and 9,999,999,999.")
+                )
+            if rec.range_end < 0 or rec.range_end > FISCAL_SEQUENTIAL_MAX:
+                raise ValidationError(
+                    _("range_end must be between 0 and 9,999,999,999.")
+                )
+            if rec.next_number < rec.range_start:
+                raise ValidationError(_("next_number cannot be below range_start."))
+            if rec.next_number > rec.range_end + 1:
+                raise ValidationError(
+                    _("next_number cannot exceed range_end by more than one (exhausted sentinel).")
+                )
 
     @api.constrains("prefix", "document_type_id")
     def _check_prefix_matches_type(self):

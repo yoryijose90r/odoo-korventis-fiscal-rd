@@ -1,6 +1,7 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from odoo.addons.korventis_l10n_do_fiscal.fields import FiscalBigInt
 from odoo.addons.korventis_l10n_do_fiscal.services.internal import INTERNAL_WRITE_TOKEN
 
 ALLOWED_STATE_TRANSITIONS = {
@@ -83,7 +84,7 @@ class KorventisFiscalDocument(models.Model):
         check_company=True,
     )
     fiscal_number = fields.Char(index=True, copy=False)
-    sequence_number = fields.Integer(copy=False)
+    sequence_number = FiscalBigInt(copy=False)
     state = fields.Selection(
         [
             ("draft", "Draft"),
