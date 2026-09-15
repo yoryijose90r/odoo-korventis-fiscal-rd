@@ -316,3 +316,13 @@ Rango original `8000000001..8000000099`. Workers: dos cursores, Barrier, commits
 ## XML-RPC
 
 Odoo 18 `Integer.convert_to_read` puede devolver `float` si el valor supera int32 (`MAXINT`). No se cambia el almacenamiento a string ni se añade workaround. El contador sigue siendo BIGINT; `fiscal_number` sigue siendo `Char`. JSON-RPC no tiene esa limitación.
+
+---
+
+# FASE 1.2.1 — korventis_pg_lock y TransactionCase
+
+Fecha: 2026-09-15
+
+QA (`4e20690`, `18.0.1.2.0`): BIGINT int8 correcto. Suite estándar 24/0/0. `korventis_pg_lock` falló **antes** de los workers: `self.env.cr.commit()` → Odoo 18 parchea `commit`/`rollback`/`close` del cursor de `TransactionCase` (`AssertionError: Cannot commit or rollback a cursor from inside a test`).
+
+Savepoint del test **no** hace visibles los datos a otras sesiones. Setup, workers, verify y cleanup usan `Registry(dbname).cursor()` (conexiones independientes; `commit` no parcheado). `self.env.cr` no se confirma. Guard: aborta `korventis`/`baruchcafe`; exige `korventis_fiscal_test` o nombre `*_fiscal_test`. Versión `18.0.1.2.1` (solo test/docs).
