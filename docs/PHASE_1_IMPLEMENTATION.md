@@ -326,3 +326,37 @@ Fecha: 2026-09-15
 QA (`4e20690`, `18.0.1.2.0`): BIGINT int8 correcto. Suite estándar 24/0/0. `korventis_pg_lock` falló **antes** de los workers: `self.env.cr.commit()` → Odoo 18 parchea `commit`/`rollback`/`close` del cursor de `TransactionCase` (`AssertionError: Cannot commit or rollback a cursor from inside a test`).
 
 Savepoint del test **no** hace visibles los datos a otras sesiones. Setup, workers, verify y cleanup usan `Registry(dbname).cursor()` (conexiones independientes; `commit` no parcheado). `self.env.cr` no se confirma. Guard: aborta `korventis`/`baruchcafe`; exige `korventis_fiscal_test` o nombre `*_fiscal_test`. Versión `18.0.1.2.1` (solo test/docs).
+
+---
+
+# FASE 1.2.2 — sesiones PostgreSQL reales (`db_connect`)
+
+Fecha: 2026-09-15
+
+QA (`4b24171`, `18.0.1.2.1`): BIGINT sigue `int8`. El test aislado arrancó. Ya no falla por `self.env.cr.commit()`. Tras ~41 s (dos `join(20)` secuenciales) ambos workers seguían vivos, sin log `korventis fiscal allocated`, assertion `Worker threads did not finish (possible deadlock).` Cleanup dejó 0 secuencias/0 compañías residuales.
+
+## Por qué `Registry.cursor()` no basta
+
+En Odoo 18, `Registry.cursor()` mira `self.test_cr`. Si el registry está en test mode (`HttpCase.enter_test_mode` u otro caller), **no abre un backend nuevo**: devuelve `TestCursor` sobre el mismo `test_cr`, con `test_lock.acquire()` sin timeout. `TestCursor.commit()` es `RELEASE SAVEPOINT`, no `COMMIT` de PostgreSQL. Dos threads sobre ese proxy no son dos transacciones independientes.
+
+`TransactionCase` no llama `enter_test_mode`, pero el proceso de tests puede dejar `test_cr` activo. El test no debe asumir que `Registry(db_name).cursor()` es una sesión real.
+
+## `db_connect`
+
+`odoo.sql_db.db_connect(dbname).cursor()` construye `sql_db.Cursor` vía `Connection.cursor()` y **nunca** consulta `registry.test_cr`. `Cursor.commit()` ejecuta `COMMIT` en el backend. Cada worker comprueba `type(cr) is Cursor` y registra `SELECT pg_backend_pid()`. El test exige exactamente dos PID de worker distintos y `main_pid not in worker_pids` (tres backends: TransactionCase + A + B).
+
+Cada worker, antes de `allocate()`, hace `SET lock_timeout = '8s'` y `SET statement_timeout = '12s'` **solo en su sesión**. Un hang se convierte en excepción PostgreSQL (`LockNotAvailable` / `QueryCanceled` / equivalente) → `worker_error` → FAIL con diagnóstico, no PASS. Barrier `wait(timeout=5)`. Deadline Python global 18 s compartido por ambos `join`. Threads non-daemon; no `pg_terminate_backend`.
+
+## Fixture
+
+No se crea `res.company`. Se reutiliza `base.main_company` (XML id Odoo 18 en `odoo/addons/base/data/res_company_data.xml`, ya committed). Huella: company + E32 + prefix E32 + `8000000001..8000000099` + vigencia `2099-01-01..2099-12-31`. Antes de borrar un leftover: si hay más de una coincidencia, FAIL; si hay documentos fiscales en esa secuencia, FAIL; solo entonces `unlink` de esa única fila. Cleanup de éxito usa exclusivamente el `seq_id` de esta ejecución. No se toca `base.main_company`.
+
+`self.env` no crea ni modifica la secuencia. `TransactionCase` se conserva por discovery/tagging/`self.registry`; su transacción no participa en el locking bajo prueba.
+
+## Diagnóstico de hang
+
+Tras los `join`, snapshot thread-safe de results/PIDs/errors. Si un worker sigue vivo: markers → `pg_stat_activity` → `pg_locks` (fallos de esas queries se añaden como `diagnostic_error`). Si los PID worker siguen en `pg_stat_activity`, **no** se hace `unlink` (residuo en DB disposable). Un error de cleanup no sustituye el error primario.
+
+## Runtime
+
+El test sigue requiriendo QA en `korventis_fiscal_test` (`--test-tags=korventis_pg_lock`). No se marca PASS local. `NcfService`, `FOR UPDATE`, BIGINT, ACL y modelos productivos: sin cambios. Versión `18.0.1.2.2` (solo test/docs/manifest).
