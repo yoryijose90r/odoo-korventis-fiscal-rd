@@ -231,3 +231,22 @@ Runtime QA (`korventis_fiscal_test`, commit `fe34926`): el módulo instaló bien
 Causa: `AccountTestInvoicingCommon` deja `cls.env` en un usuario de facturación, no Fiscal Manager. Los ACL que exigen Manager para crear rangos son correctos; el fixture no debía crear rangos con ese usuario.
 
 Corrección: secuencias (y otros datos de administración fiscal) se crean con `sudo()` **solo** en el fixture/tests de constraints. `cls.env` no se convierte en sudo. Los tests de permisos usan `with_user` (Fiscal User, Fiscal Manager, accountant). `korventis_pg_lock` sigue `-standard`. ACL/record rules sin cambios. Versión `18.0.1.1.1`.
+
+---
+
+# FASE 1.1.2 — assertRaises Odoo 18
+
+Fecha: 2026-09-15
+
+Runtime QA (`c9b0378`, `18.0.1.1.1`): 22 tests; 0 failed; 2 errors. `TestSequenceAllocationSafe` OK.
+
+Causa: `odoo.tests.common._assertRaises` hace `issubclass(exception, AccessError)`. Una tupla no es una clase → `TypeError`. unittest estándar acepta tuplas; el wrapper de Odoo 18 no.
+
+Usos encontrados y corrección (tests only):
+
+- `test_duplicity_unique_fiscal_number`: UNIQUE SQL → `IntegrityError` (el `mute_logger('odoo.sql_db')` corresponde a esa vía).
+- `test_permissions_sequence_and_issued_document`: create/write de rango por Fiscal User y write de documento issued por User/Manager → `AccessError` (ACL `perm_write=0` / `perm_create=0`). La inmutabilidad Python se cubre con `sudo()` en `test_immutability_and_state_machine`.
+
+`test_sequence_invalid_range` usa `assertRaises(Exception)` (una clase) y capturó el CHECK PostgreSQL `next_in_range`; no se cambia el constraint.
+
+Código productivo, ACL y record rules: sin cambios. Versión `18.0.1.1.2`.

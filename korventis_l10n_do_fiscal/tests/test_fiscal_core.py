@@ -221,7 +221,7 @@ class TestFiscalCore(KorventisFiscalCommon):
     def test_duplicity_unique_fiscal_number(self):
         move = self._create_invoice(self.partner_rnc)
         move.action_post()
-        with self.assertRaises((IntegrityError, ValidationError, UserError)):
+        with self.assertRaises(IntegrityError):
             with self.env.cr.savepoint():
                 from odoo.addons.korventis_l10n_do_fiscal.services.internal import (
                     INTERNAL_WRITE_TOKEN,
@@ -343,15 +343,15 @@ class TestFiscalCore(KorventisFiscalCommon):
                     "next_number": 200,
                 }
             )
-        with self.assertRaises((AccessError, UserError)):
+        with self.assertRaises(AccessError):
             self.sequence_e32.with_user(user).write({"next_number": 2})
         self.sequence_e32.with_user(manager).write({"next_number": 3})
         move = self._create_invoice(self.partner_rnc)
         move.action_post()
         doc = move.korventis_fiscal_document_id
-        with self.assertRaises((AccessError, UserError)):
+        with self.assertRaises(AccessError):
             doc.with_user(user).write({"amount_total": 1})
-        with self.assertRaises((AccessError, UserError)):
+        with self.assertRaises(AccessError):
             doc.with_user(manager).write({"amount_total": 1})
 
     def test_accountant_posting_without_fiscal_manager(self):
