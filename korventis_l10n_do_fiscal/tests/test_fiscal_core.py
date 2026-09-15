@@ -92,7 +92,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertEqual(fiscal_number2, "E310000000002")
 
     def test_sequence_company_mismatch(self):
-        company_b = self.env["res.company"].create(
+        company_b = self.env["res.company"].sudo().create(
             {"name": "Mismatch Co", "country_id": self.do.id}
         )
         with self.assertRaises(UserError):
@@ -100,7 +100,7 @@ class TestFiscalCore(KorventisFiscalCommon):
 
     def test_sequence_invalid_range(self):
         with self.assertRaises(Exception):
-            self.env["korventis.fiscal.sequence"].create(
+            self.env["korventis.fiscal.sequence"].sudo().create(
                 {
                     "company_id": self.company.id,
                     "document_type_id": self.type_e45.id,
@@ -112,7 +112,7 @@ class TestFiscalCore(KorventisFiscalCommon):
             )
 
     def test_sequence_end_of_range(self):
-        seq = self.env["korventis.fiscal.sequence"].create(
+        seq = self.env["korventis.fiscal.sequence"].sudo().create(
             {
                 "company_id": self.company.id,
                 "document_type_id": self.type_e45.id,
@@ -130,7 +130,7 @@ class TestFiscalCore(KorventisFiscalCommon):
 
     def test_overlapping_range(self):
         with self.assertRaises(ValidationError):
-            self.env["korventis.fiscal.sequence"].create(
+            self.env["korventis.fiscal.sequence"].sudo().create(
                 {
                     "company_id": self.company.id,
                     "document_type_id": self.type_e31.id,
@@ -145,8 +145,8 @@ class TestFiscalCore(KorventisFiscalCommon):
         move = self._create_invoice(self.partner_rnc)
         move.action_post()
         with self.assertRaises(UserError):
-            self.sequence_e31.write({"next_number": 1})
-        unused = self.sequence_e32
+            self.sequence_e31.sudo().write({"next_number": 1})
+        unused = self.sequence_e32.sudo()
         unused.write({"next_number": 10})
         unused.write({"next_number": 3})
         self.assertEqual(unused.next_number, 3)
@@ -166,23 +166,23 @@ class TestFiscalCore(KorventisFiscalCommon):
         doc = move.korventis_fiscal_document_id
         amounts = (doc.amount_untaxed, doc.amount_tax, doc.amount_total)
         with self.assertRaises(UserError):
-            doc.write({"fiscal_number": "E310000000099"})
+            doc.sudo().write({"fiscal_number": "E310000000099"})
         with self.assertRaises(UserError):
-            doc.write({"state": "draft"})
+            doc.sudo().write({"state": "draft"})
         with self.assertRaises(UserError):
-            doc.write({"amount_total": 1})
+            doc.sudo().write({"amount_total": 1})
         with self.assertRaises(UserError):
-            doc.with_context(korventis_skip_immutability=True).write({"state": "draft"})
+            doc.sudo().with_context(korventis_skip_immutability=True).write({"state": "draft"})
         with self.assertRaises(UserError):
             move.korventis_fiscal_document_type_id = self.type_e32
         with self.assertRaises(UserError):
             move.button_draft()
         with self.assertRaises(UserError):
-            doc.unlink()
+            doc.sudo().unlink()
         with self.assertRaises(UserError):
-            doc.event_ids[0].unlink()
+            doc.event_ids[0].sudo().unlink()
         with self.assertRaises(UserError):
-            doc.event_ids[0].write({"notes": "tamper"})
+            doc.event_ids[0].sudo().write({"notes": "tamper"})
         self.assertEqual((doc.amount_untaxed, doc.amount_tax, doc.amount_total), amounts)
 
     def test_credit_note_e34_and_original(self):
@@ -241,7 +241,7 @@ class TestFiscalCore(KorventisFiscalCommon):
                 )
 
     def test_multicompany_isolation(self):
-        company_b = self.env["res.company"].create(
+        company_b = self.env["res.company"].sudo().create(
             {
                 "name": "Korventis Company B",
                 "country_id": self.do.id,
@@ -250,6 +250,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         )
         seq_b = (
             self.env["korventis.fiscal.sequence"]
+            .sudo()
             .with_company(company_b)
             .create(
                 {
@@ -266,7 +267,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         number_a, _ = NcfService(self.env).allocate(self.sequence_e31, company=self.company)
         self.assertEqual(number_a, "E310000000001")
         self.assertEqual(number_b, "E310000000001")
-        user_a = self.env["res.users"].create(
+        user_a = self.env["res.users"].sudo().create(
             {
                 "name": "Fiscal User A",
                 "login": "korventis_fiscal_user_a",
@@ -293,7 +294,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertFalse(seq_b_as_a)
 
     def test_permissions_sequence_and_issued_document(self):
-        user = self.env["res.users"].create(
+        user = self.env["res.users"].sudo().create(
             {
                 "name": "Fiscal User Seq",
                 "login": "korventis_fiscal_user_seq",
@@ -312,7 +313,7 @@ class TestFiscalCore(KorventisFiscalCommon):
                 "company_id": self.company.id,
             }
         )
-        manager = self.env["res.users"].create(
+        manager = self.env["res.users"].sudo().create(
             {
                 "name": "Fiscal Manager Seq",
                 "login": "korventis_fiscal_manager_seq",
@@ -331,6 +332,17 @@ class TestFiscalCore(KorventisFiscalCommon):
                 "company_id": self.company.id,
             }
         )
+        with self.assertRaises(AccessError):
+            self.env["korventis.fiscal.sequence"].with_user(user).create(
+                {
+                    "company_id": self.company.id,
+                    "document_type_id": self.type_e45.id,
+                    "prefix": "E45",
+                    "range_start": 200,
+                    "range_end": 300,
+                    "next_number": 200,
+                }
+            )
         with self.assertRaises((AccessError, UserError)):
             self.sequence_e32.with_user(user).write({"next_number": 2})
         self.sequence_e32.with_user(manager).write({"next_number": 3})
@@ -343,7 +355,7 @@ class TestFiscalCore(KorventisFiscalCommon):
             doc.with_user(manager).write({"amount_total": 1})
 
     def test_accountant_posting_without_fiscal_manager(self):
-        accountant = self.env["res.users"].create(
+        accountant = self.env["res.users"].sudo().create(
             {
                 "name": "Accountant Poster",
                 "login": "korventis_accountant_poster",
@@ -362,6 +374,17 @@ class TestFiscalCore(KorventisFiscalCommon):
                 "company_id": self.company.id,
             }
         )
+        with self.assertRaises(AccessError):
+            self.env["korventis.fiscal.sequence"].with_user(accountant).create(
+                {
+                    "company_id": self.company.id,
+                    "document_type_id": self.type_e45.id,
+                    "prefix": "E45",
+                    "range_start": 400,
+                    "range_end": 500,
+                    "next_number": 400,
+                }
+            )
         move = self._create_invoice(self.partner_rnc)
         move.with_user(accountant).action_post()
         self.assertEqual(move.korventis_fiscal_document_id.state, "issued")
@@ -374,7 +397,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         )
 
     def test_draft_document_event_cleanup(self):
-        doc = self.env["korventis.fiscal.document"].create(
+        doc = self.env["korventis.fiscal.document"].sudo().create(
             {
                 "company_id": self.company.id,
                 "partner_id": self.partner_rnc.id,
@@ -384,7 +407,7 @@ class TestFiscalCore(KorventisFiscalCommon):
         doc._korventis_log_event("manual_change", notes="draft cleanup")
         self.assertTrue(doc.event_ids)
         event_ids = doc.event_ids.ids
-        doc.unlink()
+        doc.sudo().unlink()
         leftover = self.env["korventis.fiscal.event"].browse(event_ids).exists()
         self.assertFalse(leftover)
 
@@ -394,8 +417,8 @@ class TestFiscalCore(KorventisFiscalCommon):
             "partner_id": self.partner_rnc.id,
             "document_type_id": self.type_e31.id,
         }
-        first = self.env["korventis.fiscal.document"].create(vals)
-        second = self.env["korventis.fiscal.document"].create(vals)
+        first = self.env["korventis.fiscal.document"].sudo().create(vals)
+        second = self.env["korventis.fiscal.document"].sudo().create(vals)
         self.assertFalse(first.fiscal_number)
         self.assertFalse(second.fiscal_number)
         self.assertNotEqual(first.id, second.id)

@@ -219,3 +219,15 @@ Las bases `korventis` y `baruchcafe` **no** son desechables. Ningún test de la 
 ## XML
 
 xpath de `account.move`: `//sheet//field[@name='partner_id'][@widget='res_partner_many2one']` sobre `account.view_move_form`.
+
+---
+
+# FASE 1.1.1 — FIXTURE DE TESTS (QA runtime)
+
+Fecha: 2026-09-15
+
+Runtime QA (`korventis_fiscal_test`, commit `fe34926`): el módulo instaló bien; `TestFiscalCore` y `TestSequenceAllocationSafe` fallaron en `setUpClass` con `AccessError` al crear `korventis.fiscal.sequence`.
+
+Causa: `AccountTestInvoicingCommon` deja `cls.env` en un usuario de facturación, no Fiscal Manager. Los ACL que exigen Manager para crear rangos son correctos; el fixture no debía crear rangos con ese usuario.
+
+Corrección: secuencias (y otros datos de administración fiscal) se crean con `sudo()` **solo** en el fixture/tests de constraints. `cls.env` no se convierte en sudo. Los tests de permisos usan `with_user` (Fiscal User, Fiscal Manager, accountant). `korventis_pg_lock` sigue `-standard`. ACL/record rules sin cambios. Versión `18.0.1.1.1`.

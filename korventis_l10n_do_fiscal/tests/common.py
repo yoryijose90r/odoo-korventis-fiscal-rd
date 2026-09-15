@@ -3,6 +3,13 @@ from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
 
 class KorventisFiscalCommon(AccountTestInvoicingCommon):
+    """Keep ``cls.env`` as the invoicing user from AccountTestInvoicingCommon.
+
+    That user is typically an accountant, not Fiscal Manager. Sequence
+    administration therefore uses ``sudo()`` only for fixtures. Permission
+    tests must still call ``with_user`` on real restricted users.
+    """
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -31,7 +38,8 @@ class KorventisFiscalCommon(AccountTestInvoicingCommon):
                 "korventis_fiscal_document_type_id": cls.type_e31.id,
             }
         )
-        cls.sequence_e31 = cls.env["korventis.fiscal.sequence"].create(
+        Sequence = cls.env["korventis.fiscal.sequence"].sudo()
+        cls.sequence_e31 = Sequence.create(
             {
                 "company_id": cls.company.id,
                 "document_type_id": cls.type_e31.id,
@@ -41,7 +49,7 @@ class KorventisFiscalCommon(AccountTestInvoicingCommon):
                 "next_number": 1,
             }
         )
-        cls.sequence_e32 = cls.env["korventis.fiscal.sequence"].create(
+        cls.sequence_e32 = Sequence.create(
             {
                 "company_id": cls.company.id,
                 "document_type_id": cls.type_e32.id,
@@ -51,7 +59,7 @@ class KorventisFiscalCommon(AccountTestInvoicingCommon):
                 "next_number": 1,
             }
         )
-        cls.sequence_e34 = cls.env["korventis.fiscal.sequence"].create(
+        cls.sequence_e34 = Sequence.create(
             {
                 "company_id": cls.company.id,
                 "document_type_id": cls.type_e34.id,
