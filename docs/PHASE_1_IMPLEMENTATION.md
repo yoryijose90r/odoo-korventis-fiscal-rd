@@ -250,3 +250,24 @@ Usos encontrados y corrección (tests only):
 `test_sequence_invalid_range` usa `assertRaises(Exception)` (una clase) y capturó el CHECK PostgreSQL `next_in_range`; no se cambia el constraint.
 
 Código productivo, ACL y record rules: sin cambios. Versión `18.0.1.1.2`.
+
+---
+
+# FASE 1.1.3 — ACL vs inmutabilidad en tests
+
+Fecha: 2026-09-15
+
+Runtime QA (`d794fce`, `18.0.1.1.2`): 22 tests; 0 failed; 1 error. `TestSequenceAllocationSafe` OK. Tuple `assertRaises` corregido.
+
+Error restante: `test_permissions_sequence_and_issued_document` esperaba `AccessError` en `doc.with_user(user).write({'amount_total': 1})`. Odoo 18 ejecutó `korventis.fiscal.document.write()` y lanzó `UserError` (`Fiscal document E310000000001 in state issued cannot be modified.`).
+
+Orden real: la inmutabilidad corre **antes** de `super().write()`, donde Odoo comprueba ACL. Un `issued` con campos protegidos no llega a `AccessError`. User y Manager (ambos `perm_write=0` en documentos) reciben el mismo `UserError` de dominio. Eso es el contrato: un emitido no se reescribe.
+
+Separación de pruebas:
+
+- ACL secuencia: Fiscal User create/write → `AccessError`; Fiscal Manager write rango → OK.
+- Inmutabilidad documento issued: User y Manager `write` de campos protegidos → `UserError`.
+- Bypass RPC: `test_immutability_and_state_machine`.
+- Accountant `_post` sin Fiscal Manager: sin cambio.
+
+ACL, CHECK `next_in_range` y código productivo: sin cambios. Versión `18.0.1.1.3`.

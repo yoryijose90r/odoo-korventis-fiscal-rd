@@ -349,9 +349,11 @@ class TestFiscalCore(KorventisFiscalCommon):
         move = self._create_invoice(self.partner_rnc)
         move.action_post()
         doc = move.korventis_fiscal_document_id
-        with self.assertRaises(AccessError):
+        # Domain immutability runs in write() before super()/ACL. Issued + protected
+        # fields raise UserError for every non-internal caller, including Manager.
+        with self.assertRaises(UserError):
             doc.with_user(user).write({"amount_total": 1})
-        with self.assertRaises(AccessError):
+        with self.assertRaises(UserError):
             doc.with_user(manager).write({"amount_total": 1})
 
     def test_accountant_posting_without_fiscal_manager(self):
