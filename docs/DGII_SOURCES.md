@@ -59,6 +59,8 @@ Convención:
 | SECCIÓN | Tabla tipo / e-CF. |
 | CONCLUSIÓN | Homologación Bxx ↔ Exx está en Guía 5 para los tipos principales. **[REQUIERE VALIDACIÓN DGII]** catálogo completo vigente de series B (p. ej. B12/B13/B15/B16/B17 y excepciones de vigencia) antes de hardcodear el maestro. |
 
+Fase 1 (2026-09-15): se cargaron solo tipos electrónicos E31–E47 del Formato e-CF V1.0. `partner_assignable=True` para E31, E32, E44, E45, E46. E33/E34 no son perfil de cliente. E41/E43/E47 quedan no asignables al partner **[REQUIERE VALIDACIÓN DGII]**. No se implementó checksum de RNC/Cédula **[REQUIERE VALIDACIÓN DGII]**.
+
 ### Secuencias
 
 | Campo | Valor |

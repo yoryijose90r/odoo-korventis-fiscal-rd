@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fiscal_document_type_list" model="ir.ui.view">
+        <field name="name">korventis.fiscal.document.type.list</field>
+        <field name="model">korventis.fiscal.document.type</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="electronic"/>
+                <field name="prefix"/>
+                <field name="sequence_length"/>
+                <field name="direction"/>
+                <field name="partner_assignable"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_fiscal_document_type_form" model="ir.ui.view">
+        <field name="name">korventis.fiscal.document.type.form</field>
+        <field name="model">korventis.fiscal.document.type</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="code"/>
+                            <field name="name"/>
+                            <field name="prefix"/>
+                            <field name="sequence_length"/>
+                        </group>
+                        <group>
+                            <field name="electronic"/>
+                            <field name="direction"/>
+                            <field name="partner_assignable"/>
+                            <field name="active"/>
+                            <field name="dgii_source"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_fiscal_document_type" model="ir.actions.act_window">
+        <field name="name">Tipos de comprobantes</field>
+        <field name="res_model">korventis.fiscal.document.type</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

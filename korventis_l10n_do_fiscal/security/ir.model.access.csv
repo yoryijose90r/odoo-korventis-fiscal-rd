@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fiscal_type_user,korventis.fiscal.document.type.user,model_korventis_fiscal_document_type,group_fiscal_user,1,0,0,0
+access_fiscal_type_manager,korventis.fiscal.document.type.manager,model_korventis_fiscal_document_type,group_fiscal_manager,1,1,1,1
+access_fiscal_sequence_user,korventis.fiscal.sequence.user,model_korventis_fiscal_sequence,group_fiscal_user,1,0,0,0
+access_fiscal_sequence_manager,korventis.fiscal.sequence.manager,model_korventis_fiscal_sequence,group_fiscal_manager,1,1,1,1
+access_fiscal_document_user,korventis.fiscal.document.user,model_korventis_fiscal_document,group_fiscal_user,1,1,1,0
+access_fiscal_document_manager,korventis.fiscal.document.manager,model_korventis_fiscal_document,group_fiscal_manager,1,1,1,1
+access_fiscal_event_user,korventis.fiscal.event.user,model_korventis_fiscal_event,group_fiscal_user,1,0,0,0
+access_fiscal_event_manager,korventis.fiscal.event.manager,model_korventis_fiscal_event,group_fiscal_manager,1,0,0,0

@@ -1,6 +1,6 @@
 # Propuesta de arquitectura — Korventis Fiscal RD
 
-Fecha: 2026-09-14. **No se crean módulos en esta fase.**
+Fecha: 2026-09-14. Actualizado 2026-09-15: Fase 1 implementa `korventis_l10n_do_fiscal` (sin POS ni DGII HTTP).
 
 ## 1. Evaluación de la arquitectura propuesta
 
@@ -54,9 +54,9 @@ Nombres Odoo (`_name` con punto):
 | `_name` propuesto | Tabla | Por qué no es un modelo Odoo existente |
 | --- | --- | --- |
 | `korventis.fiscal.document.type` | Tipos B01/E31… | Catálogo DGII, no `ir.sequence` |
-| `korventis.fiscal.sequence.range` | Rango autorizado por compañía/tipo | `ir.sequence` no tiene vigencia DGII ni FOR UPDATE de negocio |
+| `korventis.fiscal.sequence` | Rango autorizado por compañía/tipo (Fase 1 unificó sequence+range) | `ir.sequence` no tiene vigencia DGII ni FOR UPDATE de negocio |
 | `korventis.fiscal.document` | Comprobante fiscal 1:1 (o 1:N controlado) con move | Estados internos ≠ `account.move.state` ≠ estados DGII |
-| `korventis.fiscal.document.event` | Append-only | Chatter no es inmutable ni suficiente |
+| `korventis.fiscal.event` | Append-only | Chatter no es inmutable ni suficiente |
 | `korventis.fiscal.transmission` | Intentos HTTP (Fase 4) | Observabilidad sin JWT |
 
 `korventis.fiscal.company.config` **no es necesario** si la config cabe en `res.company` + `ir.config_parameter` (parámetros globales QA: `DGII_ALLOW_PRODUCTION=False`). Preferir `res.company` para multiempresa.
@@ -65,9 +65,10 @@ Nombres Odoo (`_name` con punto):
 
 ACL: `ir.model.access` + record rules `company_id`. Grupos:
 
-- `korventis_l10n_do_fiscal.group_user`
-- `korventis_l10n_do_fiscal.group_supervisor`
-- `korventis_l10n_do_fiscal.group_manager`
+- `korventis_l10n_do_fiscal.group_fiscal_user`
+- `korventis_l10n_do_fiscal.group_fiscal_manager`
+
+(Supervisor queda para una fase posterior; Fase 1 solo User/Manager.)
 
 ## 3. Flujo restaurante
 

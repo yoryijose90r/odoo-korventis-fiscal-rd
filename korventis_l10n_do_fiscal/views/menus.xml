@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_korventis_fiscal_root"
+              name="Korventis Fiscal RD"
+              parent="account.menu_finance"
+              sequence="80"
+              groups="group_fiscal_user"/>
+    <menuitem id="menu_korventis_fiscal_document"
+              name="Documentos fiscales"
+              parent="menu_korventis_fiscal_root"
+              action="action_fiscal_document"
+              sequence="10"
+              groups="group_fiscal_user"/>
+    <menuitem id="menu_korventis_fiscal_sequence"
+              name="Secuencias / Rangos"
+              parent="menu_korventis_fiscal_root"
+              action="action_fiscal_sequence"
+              sequence="20"
+              groups="group_fiscal_manager"/>
+    <menuitem id="menu_korventis_fiscal_type"
+              name="Tipos de comprobantes"
+              parent="menu_korventis_fiscal_root"
+              action="action_fiscal_document_type"
+              sequence="30"
+              groups="group_fiscal_user"/>
+    <menuitem id="menu_korventis_fiscal_event"
+              name="Eventos"
+              parent="menu_korventis_fiscal_root"
+              action="action_fiscal_event"
+              sequence="40"
+              groups="group_fiscal_user"/>
+</odoo>

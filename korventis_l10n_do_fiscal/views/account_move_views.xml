@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_move_form_korventis_fiscal" model="ir.ui.view">
+        <field name="name">account.move.form.korventis.fiscal</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="korventis_fiscal_type_locked" invisible="1"/>
+                <field name="korventis_fiscal_document_type_id"
+                       readonly="korventis_fiscal_type_locked"/>
+                <field name="korventis_fiscal_document_id" readonly="1"/>
+                <field name="korventis_fiscal_number" readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

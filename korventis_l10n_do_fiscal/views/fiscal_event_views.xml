@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fiscal_event_list" model="ir.ui.view">
+        <field name="name">korventis.fiscal.event.list</field>
+        <field name="model">korventis.fiscal.event</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" edit="false">
+                <field name="event_datetime"/>
+                <field name="document_id"/>
+                <field name="event_type"/>
+                <field name="user_id"/>
+                <field name="old_value"/>
+                <field name="new_value"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_fiscal_event_form" model="ir.ui.view">
+        <field name="name">korventis.fiscal.event.form</field>
+        <field name="model">korventis.fiscal.event</field>
+        <field name="arch" type="xml">
+            <form create="false" delete="false" edit="false">
+                <sheet>
+                    <group>
+                        <field name="document_id"/>
+                        <field name="event_type"/>
+                        <field name="event_datetime"/>
+                        <field name="user_id"/>
+                        <field name="old_value"/>
+                        <field name="new_value"/>
+                        <field name="notes"/>
+                        <field name="company_id" groups="base.group_multi_company"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_fiscal_event" model="ir.actions.act_window">
+        <field name="name">Eventos</field>
+        <field name="res_model">korventis.fiscal.event</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="module_category_korventis_fiscal" model="ir.module.category">
+        <field name="name">Korventis Fiscal</field>
+        <field name="description">Dominican fiscal core (Korventis)</field>
+        <field name="sequence">25</field>
+    </record>
+
+    <record id="group_fiscal_user" model="res.groups">
+        <field name="name">Korventis Fiscal User</field>
+        <field name="category_id" ref="module_category_korventis_fiscal"/>
+        <field name="comment">Consult fiscal documents and use operational fiscal defaults.</field>
+    </record>
+
+    <record id="group_fiscal_manager" model="res.groups">
+        <field name="name">Korventis Fiscal Manager</field>
+        <field name="category_id" ref="module_category_korventis_fiscal"/>
+        <field name="implied_ids" eval="[(4, ref('group_fiscal_user'))]"/>
+        <field name="comment">Configure fiscal types, sequences and company fiscal settings.</field>
+    </record>
+
+    <data noupdate="1">
+        <record id="rule_fiscal_sequence_company" model="ir.rule">
+            <field name="name">Korventis fiscal sequence: company</field>
+            <field name="model_id" ref="model_korventis_fiscal_sequence"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+        <record id="rule_fiscal_document_company" model="ir.rule">
+            <field name="name">Korventis fiscal document: company</field>
+            <field name="model_id" ref="model_korventis_fiscal_document"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+        <record id="rule_fiscal_event_company" model="ir.rule">
+            <field name="name">Korventis fiscal event: company</field>
+            <field name="model_id" ref="model_korventis_fiscal_event"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+    </data>
+</odoo>

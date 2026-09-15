@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!--
+        Catalog from DGII Formato Comprobante Fiscal Electrónico (e-CF) V1.0
+        https://dgii.gov.do/cicloContribuyente/facturacion/comprobantesFiscalesElectronicosE-CF/Paginas/documentacionSobreE-CF.aspx
+        Electronic sequence: E + type(2) + 10 digits = 13 characters.
+        Traditional B-series catalog is not loaded here: [REQUIERE VALIDACIÓN DGII]
+    -->
+    <record id="document_type_e31" model="korventis.fiscal.document.type">
+        <field name="code">E31</field>
+        <field name="name">Factura de Crédito Fiscal Electrónica</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E31</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="True"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 31</field>
+    </record>
+    <record id="document_type_e32" model="korventis.fiscal.document.type">
+        <field name="code">E32</field>
+        <field name="name">Factura de Consumo Electrónica</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E32</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="True"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 32; Consumidor Final</field>
+    </record>
+    <record id="document_type_e33" model="korventis.fiscal.document.type">
+        <field name="code">E33</field>
+        <field name="name">Nota de Débito Electrónica</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E33</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="False"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 33; not a partner default</field>
+    </record>
+    <record id="document_type_e34" model="korventis.fiscal.document.type">
+        <field name="code">E34</field>
+        <field name="name">Nota de Crédito Electrónica</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E34</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="False"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 34; not a partner default</field>
+    </record>
+    <record id="document_type_e41" model="korventis.fiscal.document.type">
+        <field name="code">E41</field>
+        <field name="name">Comprobante de Compras Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E41</field>
+        <field name="direction">purchase</field>
+        <field name="partner_assignable" eval="False"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 41; issuer is the taxpayer, not a customer profile. [REQUIERE VALIDACIÓN DGII]</field>
+    </record>
+    <record id="document_type_e43" model="korventis.fiscal.document.type">
+        <field name="code">E43</field>
+        <field name="name">Gastos Menores Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E43</field>
+        <field name="direction">purchase</field>
+        <field name="partner_assignable" eval="False"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 43; not a customer profile. [REQUIERE VALIDACIÓN DGII]</field>
+    </record>
+    <record id="document_type_e44" model="korventis.fiscal.document.type">
+        <field name="code">E44</field>
+        <field name="name">Regímenes Especiales Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E44</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="True"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 44</field>
+    </record>
+    <record id="document_type_e45" model="korventis.fiscal.document.type">
+        <field name="code">E45</field>
+        <field name="name">Gubernamental Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E45</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="True"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 45</field>
+    </record>
+    <record id="document_type_e46" model="korventis.fiscal.document.type">
+        <field name="code">E46</field>
+        <field name="name">Comprobante de Exportaciones Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E46</field>
+        <field name="direction">sale</field>
+        <field name="partner_assignable" eval="True"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 46</field>
+    </record>
+    <record id="document_type_e47" model="korventis.fiscal.document.type">
+        <field name="code">E47</field>
+        <field name="name">Comprobante para Pagos al Exterior Electrónico</field>
+        <field name="electronic" eval="True"/>
+        <field name="sequence_length">10</field>
+        <field name="prefix">E47</field>
+        <field name="direction">purchase</field>
+        <field name="partner_assignable" eval="False"/>
+        <field name="dgii_source">Formato e-CF V1.0 — tipo 47; not a customer profile. [REQUIERE VALIDACIÓN DGII]</field>
+    </record>
+</odoo>
