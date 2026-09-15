@@ -16,6 +16,14 @@ Worker sessions set local ``lock_timeout`` / ``statement_timeout`` so a hang
 becomes a PostgreSQL exception (test FAIL with diagnosis), not a stuck
 non-daemon thread. The Python deadline is a last resort.
 
+Creating ``api.Environment`` in a worker thread calls ``Registry(dbname)``,
+which acquires ``Registry._lock``. ``TransactionCase`` can hold that RLock
+while ``join()`` runs (Odoo 18 / PR 161438). This test patches
+``Registry._lock`` with Odoo's ``DummyRLock`` for the method duration via
+``BaseCase.patch`` (same pattern as ``addons/auth_ldap/tests/test_auth_ldap.py``).
+It does **not** call ``enter_test_mode`` (that would wrap ``Registry.cursor()``
+in ``TestCursor``). Workers still use ``db_connect``.
+
 XML id ``base.main_company`` is the committed default company in Odoo 18
 (``odoo/addons/base/data/res_company_data.xml``). The fixture sequence uses a
 sentinel validity window so leftover cleanup cannot match a legitimate range
@@ -34,6 +42,7 @@ import time
 import traceback
 
 from odoo import api, fields, SUPERUSER_ID
+from odoo.modules.registry import DummyRLock, Registry
 from odoo.sql_db import Cursor, db_connect
 from odoo.tests import TransactionCase, tagged
 
@@ -49,9 +58,19 @@ _WORKER_LOCK_TIMEOUT = "8s"
 _WORKER_STATEMENT_TIMEOUT = "12s"
 _WORKER_DEADLINE_SECONDS = 18.0
 _CLEANUP_LOCK_TIMEOUT = "5s"
-# Fingerprint of this test's sequence only (not a production validity window).
-_FIXTURE_VALID_FROM = fields.Date.to_date("2099-01-01")
+# Fingerprints of this test's sequence only (not a production validity window).
+# OLD: leftover from 18.0.1.2.2 (invalid for allocate() in 2026).
+# NEW: valid throughout the test without using "today".
+_FIXTURE_VALID_FROM_OLD = fields.Date.to_date("2099-01-01")
+_FIXTURE_VALID_UNTIL_OLD = fields.Date.to_date("2099-12-31")
+_FIXTURE_VALID_FROM = fields.Date.to_date("2000-01-01")
 _FIXTURE_VALID_UNTIL = fields.Date.to_date("2099-12-31")
+_EXPECTED_FISCAL_NUMBERS = frozenset(
+    {
+        "E32%010d" % _LOCK_RANGE_START,
+        "E32%010d" % (_LOCK_RANGE_START + 1),
+    }
+)
 
 
 def _open_real_cursor(db_name):
@@ -103,6 +122,12 @@ class _MarkerLog:
             lines.append("%.3fs %s %s%s" % (elapsed, worker, stage, suffix))
         return "\n".join(lines)
 
+    def has_stage(self, worker, stage):
+        with self._lock:
+            return any(
+                item[1] == worker and item[2] == stage for item in self._events
+            )
+
 
 @tagged("post_install", "-at_install")
 class TestSequenceAllocationSafe(KorventisFiscalCommon):
@@ -137,25 +162,25 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                 "'_fiscal_test'. Got %r." % (_DISPOSABLE_DB_EXACT, db_name)
             )
 
-    def _fixture_domain(self, company_id, type_id):
+    def _fixture_domain(self, company_id, type_id, valid_from, valid_until):
         return [
             ("company_id", "=", company_id),
             ("document_type_id", "=", type_id),
             ("prefix", "=", "E32"),
             ("range_start", "=", _LOCK_RANGE_START),
             ("range_end", "=", _LOCK_RANGE_END),
-            ("valid_from", "=", _FIXTURE_VALID_FROM),
-            ("valid_until", "=", _FIXTURE_VALID_UNTIL),
+            ("valid_from", "=", valid_from),
+            ("valid_until", "=", valid_until),
         ]
 
-    def _clear_fingerprint_leftover(self, env, company_id, type_id):
+    def _clear_one_fingerprint(self, env, company_id, type_id, valid_from, valid_until):
         leftovers = env["korventis.fiscal.sequence"].search(
-            self._fixture_domain(company_id, type_id)
+            self._fixture_domain(company_id, type_id, valid_from, valid_until)
         )
         if len(leftovers) > 1:
             raise AssertionError(
-                "Fingerprint matched %s sequences (ids=%s); refusing to delete."
-                % (len(leftovers), leftovers.ids)
+                "Fingerprint %s..%s matched %s sequences (ids=%s); refusing to delete."
+                % (valid_from, valid_until, len(leftovers), leftovers.ids)
             )
         if not leftovers:
             return
@@ -165,10 +190,21 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
         )
         if docs:
             raise AssertionError(
-                "Fingerprint leftover sequence %s has %s fiscal document(s); "
-                "refusing to delete." % (leftover.id, docs)
+                "Fingerprint leftover sequence %s (%s..%s) has %s fiscal "
+                "document(s); refusing to delete."
+                % (leftover.id, valid_from, valid_until, docs)
             )
         leftover.unlink()
+
+    def _clear_fingerprint_leftover(self, env, company_id, type_id):
+        """Remove OLD 18.0.1.2.2 leftover and any NEW fixture residue, separately."""
+        for valid_from, valid_until in (
+            (_FIXTURE_VALID_FROM_OLD, _FIXTURE_VALID_UNTIL_OLD),
+            (_FIXTURE_VALID_FROM, _FIXTURE_VALID_UNTIL),
+        ):
+            self._clear_one_fingerprint(
+                env, company_id, type_id, valid_from, valid_until
+            )
 
     def _query_pg_activity(self, cr):
         cr.execute(
@@ -366,6 +402,8 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                 )
                 cr.execute("SET lock_timeout = %s", (_WORKER_LOCK_TIMEOUT,))
                 cr.execute("SET statement_timeout = %s", (_WORKER_STATEMENT_TIMEOUT,))
+                markers.mark(worker_name, "timeouts_configured")
+                markers.mark(worker_name, "before_env_create")
                 env = api.Environment(cr, SUPERUSER_ID, {})
                 markers.mark(worker_name, "env_created")
                 sequence = env["korventis.fiscal.sequence"].browse(seq_id)
@@ -408,6 +446,14 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                         cr.close()
                     except Exception:  # noqa: BLE001
                         pass
+
+        # Odoo 18: Environment() -> Registry(dbname) takes Registry._lock.
+        # TransactionCase can hold that RLock across join() (PR 161438).
+        # DummyRLock is Odoo's official no-op lock (HttpCase.enter_test_mode and
+        # auth_ldap tests). BaseCase.patch uses unittest.mock.patch.object and
+        # addCleanup(stop), so the original RLock is restored even on failure.
+        # This does not call enter_test_mode / TestCursor.
+        self.patch(Registry, "_lock", DummyRLock())
 
         threads = [
             threading.Thread(
@@ -509,41 +555,49 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                 raws = sorted(item[1] for item in results_snapshot)
                 if len(set(numbers)) != 2:
                     primary_error = "Fiscal numbers must be unique, got %s" % (numbers,)
+                elif set(numbers) != _EXPECTED_FISCAL_NUMBERS:
+                    primary_error = (
+                        "Expected fiscal numbers %s, got %s"
+                        % (sorted(_EXPECTED_FISCAL_NUMBERS), sorted(numbers))
+                    )
                 elif raws != [_LOCK_RANGE_START, _LOCK_RANGE_START + 1]:
                     primary_error = (
                         "Expected sorted raws %s, got %s"
                         % ([_LOCK_RANGE_START, _LOCK_RANGE_START + 1], raws)
                     )
+                elif not (
+                    markers.has_stage("A", "before_env_create")
+                    and markers.has_stage("B", "before_env_create")
+                    and markers.has_stage("A", "env_created")
+                    and markers.has_stage("B", "env_created")
+                    and markers.has_stage("A", "before_allocate")
+                    and markers.has_stage("B", "before_allocate")
+                ):
+                    primary_error = (
+                        "Workers did not reach env_created/before_allocate.\nmarkers:\n%s"
+                        % markers.dump()
+                    )
                 else:
-                    for number in numbers:
-                        if len(number) != 13 or not number.startswith("E32"):
-                            primary_error = "Invalid fiscal number %s" % number
-                            break
-                    if primary_error is None:
-                        verify_cr = _open_real_cursor(db_name)
-                        try:
-                            verify_cr.execute(
-                                "SET application_name = %s",
-                                ("korventis_pg_lock_verify",),
-                            )
-                            verify = api.Environment(verify_cr, SUPERUSER_ID, {})
-                            persisted = verify["korventis.fiscal.sequence"].browse(
-                                seq_id
-                            )
-                            if not persisted.exists():
-                                primary_error = (
-                                    "Verify: sequence %s is missing." % seq_id
+                    verify_cr = _open_real_cursor(db_name)
+                    try:
+                        verify_cr.execute(
+                            "SET application_name = %s",
+                            ("korventis_pg_lock_verify",),
+                        )
+                        verify = api.Environment(verify_cr, SUPERUSER_ID, {})
+                        persisted = verify["korventis.fiscal.sequence"].browse(seq_id)
+                        if not persisted.exists():
+                            primary_error = "Verify: sequence %s is missing." % seq_id
+                        elif persisted.next_number != _LOCK_RANGE_START + 2:
+                            primary_error = (
+                                "Persisted next_number=%s, expected %s"
+                                % (
+                                    persisted.next_number,
+                                    _LOCK_RANGE_START + 2,
                                 )
-                            elif persisted.next_number != _LOCK_RANGE_START + 2:
-                                primary_error = (
-                                    "Persisted next_number=%s, expected %s"
-                                    % (
-                                        persisted.next_number,
-                                        _LOCK_RANGE_START + 2,
-                                    )
-                                )
-                        finally:
-                            verify_cr.close()
+                            )
+                    finally:
+                        verify_cr.close()
         except Exception:  # noqa: BLE001
             if primary_error is None:
                 primary_error = "Unexpected error during assertions:\n%s" % (

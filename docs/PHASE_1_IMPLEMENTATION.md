@@ -360,3 +360,31 @@ Tras los `join`, snapshot thread-safe de results/PIDs/errors. Si un worker sigue
 ## Runtime
 
 El test sigue requiriendo QA en `korventis_fiscal_test` (`--test-tags=korventis_pg_lock`). No se marca PASS local. `NcfService`, `FOR UPDATE`, BIGINT, ACL y modelos productivos: sin cambios. Versión `18.0.1.2.2` (solo test/docs/manifest).
+
+---
+
+# FASE 1.2.3 — DummyRLock para Environment concurrente
+
+Fecha: 2026-09-15
+
+QA (`91ae904`, `18.0.1.2.2`): `db_connect` sí abrió backends distintos (main `119885`, B `119892`, A `119893`). PostgreSQL en `ClientRead` / `idle in transaction` tras `SET statement_timeout`. Sin locks PG. Markers pararon entre `cursor_opened` y `env_created` ~18 s; al vencer el `join` ambos avanzaron y fallaron `UserError: The fiscal sequence is not yet valid.` (fixture `valid_from=2099-01-01`).
+
+## Causa
+
+`api.Environment(cr, uid, {})` llama `Registry(cr.dbname)`, que toma `Registry._lock` (`threading.RLock`) en `odoo/modules/registry.py`. Un hilo de `TransactionCase` puede retener ese lock mientras hace `join()` (Odoo PR #161438). Los workers esperan el RLock; PostgreSQL espera al cliente.
+
+## Parche del harness (no productivo)
+
+`DummyRLock` oficial: `odoo.modules.registry.DummyRLock` (la misma clase que `HttpCase.enter_test_mode` y `addons/auth_ldap/tests/test_auth_ldap.py`).
+
+`BaseCase.patch(obj, key, val)` = `unittest.mock.patch.object` + `addCleanup(patcher.stop)` (`odoo/tests/common.py`). Restaura `Registry._lock` aunque el test falle.
+
+Este test hace `self.patch(Registry, "_lock", DummyRLock())` **antes** de `thread.start()`. **No** llama `enter_test_mode` / `leave_test_mode` (eso activaría `TestCursor`). Workers siguen con `db_connect` + `NcfService.allocate()` + `FOR UPDATE` real.
+
+## Fixture
+
+Vigencia NEW: `2000-01-01` .. `2099-12-31`. El setup también limpia el leftover OLD `2099-01-01` .. `2099-12-31` (compatibilidad temporal), cada fingerprint por separado, sin borrar por rango solo.
+
+## Runtime
+
+Sigue requiriendo QA `korventis_pg_lock` en `korventis_fiscal_test`. No PASS local. Versión `18.0.1.2.3` (solo test/docs/manifest).
