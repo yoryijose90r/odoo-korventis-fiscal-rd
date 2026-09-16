@@ -1,6 +1,10 @@
 from odoo import _, fields, models
 from odoo.exceptions import AccessError, UserError
 
+from odoo.addons.korventis_partner_dgii.services.schema import (
+    ensure_custom_indexes,
+)
+
 
 class KorventisDgiiRncVersion(models.Model):
     _name = "korventis.dgii.rnc.version"
@@ -45,14 +49,7 @@ class KorventisDgiiRncVersion(models.Model):
     ]
 
     def init(self):
-        self.env.cr.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS
-                korventis_dgii_rnc_version_one_active_idx
-                ON korventis_dgii_rnc_version (state)
-                WHERE state = 'active'
-            """
-        )
+        ensure_custom_indexes(self.env.cr)
 
     def action_restore_previous(self):
         self.ensure_one()

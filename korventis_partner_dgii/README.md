@@ -5,6 +5,14 @@ permite buscar clientes y ofrece un registro asistido. Depende del núcleo
 `korventis_l10n_do_fiscal`, pero no modifica su contabilización, secuencias,
 notas E34, documentos ni eventos.
 
+Instalación, actualización, despliegue y reversión:
+
+- `docs/INSTALL.md`
+- `docs/UPGRADE.md`
+- `docs/PRODUCTION_DEPLOYMENT.md`
+- `docs/ROLLBACK.md`
+- `docs/DATABASE_CHANGES.md`
+
 ## Fuente y formato
 
 Fuente principal:
@@ -46,8 +54,10 @@ Política de anomalías:
 - ACTIVO, SUSPENDIDO y los demás estados se conservan; no crean bloqueos
   fiscales ni representan autorización para emitir comprobantes.
 
-La tarea diaria se programa a las 05:00 UTC, equivalente a la 01:00 en
-`America/Santo_Domingo` (UTC-4, sin horario estacional).
+La tarea diaria se calcula a la 01:00 de `America/Santo_Domingo` y se guarda
+en UTC naive de Odoo. No usa la zona horaria del sistema operativo. Tras
+`-i` queda **inactiva** y no descarga hasta que un administrador active la
+actualización diaria después de una importación correcta.
 
 ## Primera carga exclusivamente en QA
 

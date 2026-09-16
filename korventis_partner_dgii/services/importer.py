@@ -8,6 +8,7 @@ import logging
 import os
 import pathlib
 import re
+import shutil
 import stat
 import tempfile
 import zipfile
@@ -192,6 +193,15 @@ class DgiiRegistryImporter:
         return parsed.geturl()
 
     def _download(self, url, active):
+        local = (
+            self.env["ir.config_parameter"].sudo().get_param(
+                "korventis_partner_dgii.shared_archive_path",
+                "",
+            )
+            or ""
+        ).strip()
+        if local:
+            return self._copy_shared_archive(local)
         descriptor, path = tempfile.mkstemp(prefix="korventis-dgii-", suffix=".zip")
         os.close(descriptor)
         headers = {
@@ -277,6 +287,37 @@ class DgiiRegistryImporter:
             except OSError:
                 pass
             raise
+
+    def _copy_shared_archive(self, local):
+        source = pathlib.Path(local)
+        if not source.is_absolute():
+            raise UserError(
+                _("La ruta del archivo compartido DGII debe ser absoluta.")
+            )
+        resolved = source.resolve()
+        if resolved.suffix.lower() != ".zip" or not resolved.is_file():
+            raise UserError(
+                _("El archivo compartido DGII debe ser un ZIP existente.")
+            )
+        size = resolved.stat().st_size
+        if size <= 0 or size > MAX_ARCHIVE_BYTES:
+            raise UserError(_("El ZIP compartido supera el tamaño máximo permitido."))
+        descriptor, path = tempfile.mkstemp(prefix="korventis-dgii-", suffix=".zip")
+        os.close(descriptor)
+        try:
+            shutil.copyfile(resolved, path)
+        except OSError:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return {
+            "not_modified": False,
+            "path": path,
+            "etag": False,
+            "last_modified": False,
+        }
 
     def _request_download(self, url, headers):
         current_url = url

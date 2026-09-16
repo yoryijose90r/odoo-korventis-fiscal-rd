@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_dgii_registry_status_form" model="ir.ui.view">
+        <field name="name">korventis.dgii.registry.status.form</field>
+        <field name="model">korventis.dgii.registry.status</field>
+        <field name="arch" type="xml">
+            <form create="0" edit="0" delete="0">
+                <sheet>
+                    <div class="alert alert-info" role="alert"
+                         invisible="not module_installed">
+                        Módulo instalado. La primera importación es una operación
+                        controlada y no se ejecuta durante -i/-u.
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="registry_state != 'pending'">
+                        Padrón pendiente de importar. Use Importar ahora cuando
+                        la operación y el espacio en disco estén listos.
+                    </div>
+                    <div class="alert alert-success" role="alert"
+                         invisible="registry_state != 'active'">
+                        Padrón activo. El estado SUSPENDIDO se conserva como
+                        información y no autoriza emitir comprobantes.
+                    </div>
+                    <group>
+                        <group>
+                            <field name="module_installed"/>
+                            <field name="registry_state"/>
+                            <field name="active_version_id"/>
+                            <field name="active_record_count"/>
+                        </group>
+                        <group>
+                            <field name="last_success_at"/>
+                            <field name="last_success_state"/>
+                            <field name="last_error_at"/>
+                            <field name="last_error"/>
+                        </group>
+                    </group>
+                    <group string="Tarea programada">
+                        <field name="auto_import_enabled"/>
+                        <field name="cron_active"/>
+                        <field name="cron_nextcall"/>
+                        <field name="last_migration"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_dgii_registry_status" model="ir.actions.server">
+        <field name="name">Estado del padrón DGII</field>
+        <field name="model_id" ref="model_korventis_dgii_registry_status"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open()</field>
+    </record>
+</odoo>

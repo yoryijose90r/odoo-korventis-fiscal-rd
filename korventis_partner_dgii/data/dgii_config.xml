@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="config_dgii_source_url" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.source_url</field>
+        <field name="value">https://dgii.gov.do/app/WebApps/Consultas/RNC/RNC_CONTRIBUYENTES.zip</field>
+    </record>
+    <record id="config_dgii_fallback_url" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.fallback_url</field>
+        <field name="value" eval="''"/>
+    </record>
+    <record id="config_dgii_shared_archive_path" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.shared_archive_path</field>
+        <field name="value" eval="''"/>
+    </record>
+    <record id="config_dgii_minimum_records" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.minimum_records</field>
+        <field name="value">100000</field>
+    </record>
+    <record id="config_dgii_minimum_volume_ratio" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.minimum_volume_ratio</field>
+        <field name="value">0.70</field>
+    </record>
+    <record id="config_dgii_maximum_volume_ratio" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.maximum_volume_ratio</field>
+        <field name="value">1.30</field>
+    </record>
+    <record id="config_dgii_auto_import_enabled" model="ir.config_parameter">
+        <field name="key">korventis_partner_dgii.auto_import_enabled</field>
+        <field name="value">False</field>
+    </record>
+</odoo>

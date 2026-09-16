@@ -6,6 +6,9 @@ from odoo.addons.korventis_partner_dgii.services.normalization import (
     normalize_identification,
     normalize_name,
 )
+from odoo.addons.korventis_partner_dgii.services.schema import (
+    ensure_custom_indexes,
+)
 
 
 class KorventisDgiiRnc(models.Model):
@@ -39,22 +42,7 @@ class KorventisDgiiRnc(models.Model):
     ]
 
     def init(self):
-        self.env.cr.execute(
-            """
-            CREATE INDEX IF NOT EXISTS korventis_dgii_rnc_version_name_prefix_idx
-                ON korventis_dgii_rnc
-                (version_padron_id, razon_social_normalizada varchar_pattern_ops)
-            """
-        )
-        self.env.cr.execute(
-            """
-            CREATE INDEX IF NOT EXISTS korventis_dgii_rnc_name_fts_idx
-                ON korventis_dgii_rnc
-                USING gin (
-                    to_tsvector('simple'::regconfig, razon_social_normalizada)
-                )
-            """
-        )
+        ensure_custom_indexes(self.env.cr)
 
     @api.model
     def search_active_registry(self, query, limit=20):

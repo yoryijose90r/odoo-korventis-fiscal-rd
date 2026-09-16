@@ -9,3 +9,6 @@ access_partner_lookup_invoice,korventis.partner.lookup.wizard.invoice,model_korv
 access_partner_lookup_line_user,korventis.partner.lookup.line.user,model_korventis_partner_lookup_line,group_dgii_user,1,1,1,1
 access_partner_lookup_line_invoice,korventis.partner.lookup.line.invoice,model_korventis_partner_lookup_line,account.group_account_invoice,1,1,1,1
 access_dgii_import_wizard_manager,korventis.dgii.import.wizard.manager,model_korventis_dgii_import_wizard,group_dgii_manager,1,1,1,1
+access_dgii_status_user,korventis.dgii.registry.status.user,model_korventis_dgii_registry_status,group_dgii_user,1,1,1,1
+access_dgii_status_invoice,korventis.dgii.registry.status.invoice,model_korventis_dgii_registry_status,account.group_account_invoice,1,1,1,1
+access_dgii_status_manager,korventis.dgii.registry.status.manager,model_korventis_dgii_registry_status,group_dgii_manager,1,1,1,1

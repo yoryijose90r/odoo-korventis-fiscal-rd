@@ -6,6 +6,13 @@
               sequence="30"
               groups="group_dgii_user"/>
 
+    <menuitem id="menu_dgii_status"
+              name="Estado"
+              parent="menu_korventis_dgii_root"
+              action="action_dgii_registry_status"
+              sequence="5"
+              groups="group_dgii_user"/>
+
     <menuitem id="menu_partner_lookup"
               name="Buscar o registrar cliente"
               parent="menu_korventis_dgii_root"

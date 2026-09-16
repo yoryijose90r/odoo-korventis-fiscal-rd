@@ -1,5 +1,6 @@
 from odoo import _, fields, models
 
+from odoo.addons.korventis_partner_dgii.hooks import ensure_single_cron
 from odoo.addons.korventis_partner_dgii.models.dgii_import_run import (
     PRIMARY_DGII_URL,
 )
@@ -24,6 +25,13 @@ class KorventisDgiiImportWizard(models.TransientModel):
     save_for_scheduled_import = fields.Boolean(
         string="Usar estas URLs en la tarea diaria",
         default=True,
+    )
+    activate_scheduled_import = fields.Boolean(
+        string="Activar actualización diaria a la 1:00 a. m. (Santo Domingo)",
+        help="La tarea permanece inactiva tras instalar el módulo. "
+             "Actívela sólo cuando la primera carga y el espacio en disco "
+             "estén listos.",
+        default=False,
     )
 
     def action_import(self):
@@ -52,6 +60,13 @@ class KorventisDgiiImportWizard(models.TransientModel):
                 "korventis_partner_dgii.fallback_url",
                 fallback_url or "",
             )
+        if self.activate_scheduled_import and run.state in ("success", "unchanged"):
+            parameters = self.env["ir.config_parameter"].sudo()
+            parameters.set_param(
+                "korventis_partner_dgii.auto_import_enabled",
+                "True",
+            )
+            ensure_single_cron(self.env, activate=True)
         return {
             "type": "ir.actions.act_window",
             "name": _("Ejecución de importación DGII"),

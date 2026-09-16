@@ -143,6 +143,17 @@ class KorventisDgiiImportRun(models.Model):
     @api.model
     def _cron_import_registry(self):
         parameters = self.env["ir.config_parameter"].sudo()
+        if (
+            parameters.get_param(
+                "korventis_partner_dgii.auto_import_enabled",
+                "False",
+            )
+            != "True"
+        ):
+            _logger.info(
+                "DGII scheduled import skipped: auto_import_enabled is not True"
+            )
+            return True
         source_url = parameters.get_param(
             "korventis_partner_dgii.source_url",
             PRIMARY_DGII_URL,

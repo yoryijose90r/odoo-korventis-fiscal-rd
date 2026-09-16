@@ -96,6 +96,7 @@
                     <field name="source_url" widget="url"/>
                     <field name="fallback_url" widget="url"/>
                     <field name="save_for_scheduled_import"/>
+                    <field name="activate_scheduled_import"/>
                 </group>
                 <footer>
                     <button name="action_import" type="object"

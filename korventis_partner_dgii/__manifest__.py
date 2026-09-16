@@ -1,7 +1,7 @@
 {
     "name": "Korventis Partner DGII",
     "summary": "Padrón local DGII y registro asistido de clientes dominicanos",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.1.0",
     "category": "Sales/CRM",
     "author": "Korventis",
     "website": "https://github.com/yoryijose90r/odoo-korventis-fiscal-rd",
@@ -14,7 +14,9 @@
     "data": [
         "security/dgii_security.xml",
         "security/ir.model.access.csv",
+        "data/dgii_config.xml",
         "data/dgii_cron.xml",
+        "views/dgii_status_views.xml",
         "views/dgii_rnc_views.xml",
         "views/dgii_version_views.xml",
         "views/dgii_import_run_views.xml",
@@ -23,6 +25,7 @@
         "wizard/partner_lookup_views.xml",
         "views/menus.xml",
     ],
+    "post_init_hook": "post_init_hook",
     "installable": True,
     "application": False,
     "auto_install": False,
