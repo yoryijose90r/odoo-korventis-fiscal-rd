@@ -2,29 +2,33 @@
 
 Localización fiscal de República Dominicana para Odoo 18 Community.
 
-Proyecto:
-
-Korventis ERP / Korventis Fiscal RD
-
-Objetivo:
-
-Desarrollar módulos propios para implementar funcionalidades fiscales de República Dominicana sobre Odoo 18 Community.
-
 Arquitectura prevista:
 
-* korventis_l10n_do_fiscal
-* korventis_l10n_do_pos
-* korventis_l10n_do_ecf
-* korventis_l10n_do_reports
+* `korventis_l10n_do_fiscal` — núcleo (tipos, e-NCF, auditoría). Versión `18.0.1.3.1`.
+* `korventis_partner_dgii` — padrón local y asistente de clientes. Versión `18.0.1.1.0`.
+* `korventis_l10n_do_pos` — no existe aún; véase `docs/POS_GAP_ANALYSIS.md`.
+* `korventis_l10n_do_ecf` / `korventis_l10n_do_reports` — no iniciados.
 
 Estado:
 
-En desarrollo (FASE 1.1 hardening en `feature/fiscal-core`).
+Rama de desarrollo `feature/partner-dgii-local`. El núcleo fiscal de Fase 1.3
+está integrado; el padrón DGII es instalable y no descarga en `-i`. Las pruebas
+POS de restaurante aún no tienen módulo propio.
 
-Entorno inicial:
+Entorno:
 
-QA / Testing.
+QA / Testing. Base desechable: `korventis_fiscal_test`. No modificar `korventis`
+ni `baruchcafe`. No desplegar en producción.
 
-No desplegar automáticamente en producción.
+Documentación:
 
-Política de tests: las bases `korventis` y `baruchcafe` no son desechables. La suite estándar no hace `commit()` persistente. El tag `korventis_pg_lock` exige una BD temporal (concepto `korventis_fiscal_test`, no creada aquí). Ver `docs/PHASE_1_IMPLEMENTATION.md`.
+* `docs/INSTALL.md` — instalación desde cero
+* `docs/UPGRADE.md` — clientes existentes
+* `docs/MULTIDB.md` — varias bases
+* `docs/DGII_IMPORT.md` — primera carga y cron
+* `docs/CONFIGURATION.md` — parámetros
+* `docs/ROLLBACK.md` — recuperación
+* `docs/QA_CHECKLIST.md` — aceptación
+* `docs/POS_GAP_ANALYSIS.md` — brecha POS
+
+Instalador: `scripts/install_korventis.sh`. Verificador: `scripts/verify_korventis.sh`.

@@ -30,6 +30,9 @@ from odoo.addons.korventis_partner_dgii.services.schema import (
     pg_index_exists,
     pg_table_exists,
 )
+from odoo.addons.korventis_partner_dgii.tests.common import (
+    park_active_registry_versions,
+)
 
 
 @tagged("post_install", "-at_install")
@@ -82,6 +85,7 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
         self.assertTrue(isinstance(first, list))
 
     def test_c_upgrade_helpers_preserve_registry_and_partners(self):
+        park_active_registry_versions(self.env)
         version = self.env["korventis.dgii.rnc.version"].sudo().create(
             {
                 "name": "preserve.csv",
@@ -144,7 +148,7 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
     def test_d_two_databases_require_runtime_harness(self):
         self.skipTest(
             "El aislamiento Base A / Base B requiere dos bases Odoo en el "
-            "mismo servidor. Procedimiento en docs/INSTALL.md."
+            "mismo servidor. Procedimiento en docs/MULTIDB.md."
         )
 
     def test_e_migration_fails_closed_on_two_active_versions(self):
@@ -271,6 +275,36 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
         )
         with self.assertRaises(UserError):
             importer._copy_shared_archive("relative.zip")
+
+    def test_installer_scripts_are_safe_and_non_destructive(self):
+        root = os.path.dirname(get_module_path("korventis_partner_dgii"))
+        scripts_dir = os.path.join(root, "scripts")
+        expected = (
+            "install_korventis.sh",
+            "verify_korventis.sh",
+            "verify_korventis.py",
+            "enable_dgii_cron.sh",
+            "enable_dgii_cron.py",
+            "env.example",
+        )
+        combined = []
+        for name in expected:
+            path = os.path.join(scripts_dir, name)
+            self.assertTrue(os.path.isfile(path), path)
+            with open(path, encoding="utf-8") as handle:
+                combined.append(handle.read())
+        text = "\n".join(combined)
+        for forbidden in (
+            "dropdb",
+            "DROP DATABASE",
+            "docker volume rm",
+            "docker compose down -v",
+            "rm -rf",
+        ):
+            self.assertNotIn(forbidden, text)
+        self.assertRegex(text, r"KORVENTIS_PROTECTED_DATABASES:-korventis baruchcafe")
+        self.assertIn("korventis_l10n_do_fiscal,korventis_partner_dgii", text)
+        self.assertNotRegex(text, r"(?im)^\s*(password|passwd|db_password)\s*=")
 
 
 @tagged("post_install", "-at_install")

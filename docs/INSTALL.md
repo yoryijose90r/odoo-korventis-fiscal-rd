@@ -1,28 +1,66 @@
-# Instalación de Korventis Partner DGII
+# Instalación desde cero
 
-Versión documentada: `18.0.1.1.0` (`korventis_partner_dgii`).
+Versiones: `korventis_l10n_do_fiscal` `18.0.1.3.1` y `korventis_partner_dgii` `18.0.1.1.0`.
 
-El módulo se instala con el mecanismo estándar de Odoo. No requiere `CREATE TABLE`,
-`ALTER TABLE` ni `CREATE INDEX` manuales. No consulta licencias ni servicios de
-Korventis para funcionar.
+Este documento es para una **base nueva** de Odoo 18 Community. Si el cliente ya tiene
+Odoo y el núcleo fiscal, use `docs/UPGRADE.md`. Si hay varias bases en el mismo
+servidor, lea también `docs/MULTIDB.md`.
 
-## Requisitos mínimos
+La instalación **no** descarga el padrón DGII y **no** activa la tarea diaria.
+Eso se hace después, de forma controlada: `docs/DGII_IMPORT.md`.
 
-- Odoo 18 Community.
-- PostgreSQL 12 o superior, con privilegios para crear tablas e índices en la
-  base del cliente.
-- Módulos `contacts`, `partner_autocomplete` y `korventis_l10n_do_fiscal`
-  (`18.0.1.3.1` o compatible).
-- Idioma español instalado (`es_DO` recomendado) antes de usar el asistente
-  de clientes.
-- Espacio en disco para el ZIP DGII (~27 MB observados), su adjunto en el
-  filestore, la versión activa y una versión anterior recuperable.
-- El addons path debe incluir este repositorio.
+No ejecute estos comandos contra producción ni contra las bases `korventis` o
+`baruchcafe`.
 
-Sustituya `<ODOO_BIN>`, `<ODOO_CONF>` y `<DB>` por los valores del entorno.
-No use credenciales ni direcciones de producción en este documento.
+## 1. Qué necesita
 
-## Instalación inicial (base nueva)
+- Odoo 18 Community en marcha (VPS dedicado o servidor multibase).
+- PostgreSQL con permiso para crear tablas e índices **dentro de la base del cliente**.
+- El repositorio Korventis en el `addons_path` de esa instancia.
+- Módulos estándar: `contacts`, `partner_autocomplete`, `account`, `l10n_do`.
+- Idioma español activado (`es_DO` recomendado) antes de usar el asistente de clientes.
+- Disco libre para el ZIP DGII (~27 MB), su adjunto y dos versiones del padrón.
+- El usuario del sistema que ejecuta Odoo debe poder leer los addons.
+
+No se requiere Odoo Enterprise, ni un bloqueo de licencia, ni SQL escrito a mano.
+
+## 2. Rutas y permisos
+
+1. Clone o actualice este repositorio en el servidor.
+2. Añada esa carpeta al `addons_path` de `/etc/odoo/odoo.conf` (o el archivo real
+   de la instancia).
+3. Confirme que el servicio Odoo ve ambos directorios de addons (el
+   `addons_path` debe incluir este repositorio). En Aplicaciones deben poder
+   instalarse `korventis_l10n_do_fiscal` y `korventis_partner_dgii`.
+
+## 3. Variables (sin contraseñas)
+
+Copie `scripts/env.example` a un archivo **fuera de git** (por ejemplo
+`/etc/odoo/korventis.env`) y rellene rutas reales. Nunca ponga la clave de
+PostgreSQL en el repositorio: Odoo la lee de `odoo.conf`.
+
+```bash
+export ODOO_BIN=/usr/bin/odoo
+export ODOO_CONF=/etc/odoo/odoo.conf
+export ODOO_DB=nombre_de_la_base_nueva
+export KORVENTIS_ACTION=install
+```
+
+Los scripts rechazan las bases protegidas `korventis` y `baruchcafe`.
+
+## 4. Instalar
+
+El orden es fijo: primero el núcleo fiscal, después el padrón. El instalador
+pasa ambos a `-i`; Odoo resuelve dependencias y crea tablas, campos, grupos,
+menús e índices con el ORM, los manifiestos y `post_init_hook`.
+
+```bash
+chmod +x scripts/*.sh
+KORVENTIS_ACTION=install ./scripts/install_korventis.sh
+./scripts/verify_korventis.sh
+```
+
+Equivalente manual:
 
 ```bash
 <ODOO_BIN> -c <ODOO_CONF> -d <DB> \
@@ -30,87 +68,25 @@ No use credenciales ni direcciones de producción en este documento.
   --stop-after-init
 ```
 
-Si el núcleo fiscal ya está instalado:
+Códigos de salida: `0` correcto; distinto de `0` significa que hay que leer el
+log de Odoo. Los scripts no imprimen contraseñas.
 
-```bash
-<ODOO_BIN> -c <ODOO_CONF> -d <DB> \
-  -i korventis_partner_dgii --stop-after-init
-```
+## 5. Comprobar en la interfaz
 
-La instalación debe terminar aunque DGII no esté accesible. No descarga el
-padrón. La tarea diaria queda **inactiva**.
-
-Comprobaciones inmediatas:
-
-1. Apps: `korventis_partner_dgii` en estado instalado.
+1. Aplicaciones: ambos módulos en estado instalado.
 2. Contactos > Padrón DGII > Estado: módulo instalado, padrón pendiente.
-3. Una sola tarea `Korventis: actualizar padrón DGII`, inactiva.
+3. Una sola tarea `Korventis: actualizar padrón DGII`, **inactiva**.
 4. Asignar `Usuario del padrón DGII` y `Administrador del padrón DGII`.
+5. En la compañía, activar `Enable Korventis Fiscal Core` cuando vaya a emitir
+   comprobantes (eso no descarga el padrón).
 
-## Primera carga (operación controlada)
+## 6. Qué no hace esta instalación
 
-1. Confirmar espacio en disco y ventana de mantenimiento.
-2. Contactos > Padrón DGII > Importar ahora.
-3. Conservar la URL principal oficial. La URL alternativa sólo si su
-   procedencia oficial fue verificada.
-4. No activar la tarea diaria hasta completar una importación correcta.
-5. Revisar Estado: padrón activo, última sincronización correcta, sin error
-   bloqueante.
-6. Probar búsqueda por RNC y por razón social.
+- No crea ni borra bases de datos.
+- No elimina volúmenes Docker.
+- No importa el ZIP de DGII.
+- No enciende el cron.
+- No modifica otras bases del mismo servidor.
 
-Si la descarga falla, el módulo sigue instalado. Reintente la importación.
-No se activa un padrón incompleto.
-
-## VPS dedicado
-
-Una base, un filestore, un servicio Odoo. Instale sólo en esa base. La tarea
-diaria, si se activa, corre en el proceso Odoo de esa instancia. El huso de
-la importación es `America/Santo_Domingo`; no depende de la zona horaria del
-sistema operativo.
-
-## VPS compartido (multibase)
-
-Cada base de cliente es un PostgreSQL independiente. Ejemplo de intención:
-
-- Base A: Korventis.
-- Base B: Baruch Café.
-
-```bash
-<ODOO_BIN> -c <ODOO_CONF> -d <DB_A> -i korventis_partner_dgii --stop-after-init
-<ODOO_BIN> -c <ODOO_CONF> -d <DB_B> -i korventis_partner_dgii --stop-after-init
-```
-
-Instalar en `<DB_A>` no modifica `<DB_B>`. Cada base tiene sus tablas, contactos,
-versiones, ejecuciones, parámetros y tarea `ir.cron`.
-
-Los advisory locks de PostgreSQL son por base. No hay padrón compartido entre
-clientes.
-
-### Descarga del mismo ZIP por varias bases
-
-Por defecto cada base descarga su propia copia y guarda su adjunto. No se
-comparten filas ORM.
-
-Estrategia opcional, no obligatoria: colocar un ZIP oficial ya validado en
-una ruta absoluta del servidor y, **en cada base**, configurar
-
-`korventis_partner_dgii.shared_archive_path`
-
-Esa ruta es de sólo lectura compartida del sistema de archivos. Cada cliente
-sigue importando a sus propias tablas. No usar un filestore ni una base
-compartida entre clientes.
-
-## Servidor local del cliente
-
-El mismo comando `-i`. Active la tarea diaria sólo si el equipo permanecerá
-encendido a la 1:00 a. m. de Santo Domingo o si acepta que Odoo ejecute el
-cron en el siguiente arranque posterior a `nextcall`.
-
-## Tarea programada
-
-- Se crea exactamente una por base (`noupdate="1"`).
-- Horario objetivo: 01:00 `America/Santo_Domingo` (sin DST; se almacena en
-  UTC naive que usa Odoo).
-- No se habilita en la instalación.
-- El método del cron no descarga si
-  `korventis_partner_dgii.auto_import_enabled` no es `True`.
+Siguiente paso: `docs/DGII_IMPORT.md`. Parámetros: `docs/CONFIGURATION.md`.
+Recuperación: `docs/ROLLBACK.md`. Pruebas: `docs/QA_CHECKLIST.md`.

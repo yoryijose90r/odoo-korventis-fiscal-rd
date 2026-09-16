@@ -1,6 +1,12 @@
 # Reversión
 
-## Respaldo previo (obligatorio antes de instalar o actualizar)
+Objetivo: recuperar un fallo de instalación, actualización o importación **sin
+perder facturas ni e-NCF**.
+
+No borre bases, no ejecute `docker volume rm` y no use estos pasos en
+producción sin autorización.
+
+## Respaldo previo (obligatorio)
 
 PostgreSQL:
 
@@ -8,47 +14,63 @@ PostgreSQL:
 pg_dump --format=custom --file=<RESPALDO>.dump <DB>
 ```
 
-Filestore de Odoo: copiar el directorio configurado en `data_dir` de esa
-instancia. El ZIP DGII importado vive como `ir.attachment`.
+Filestore: copiar el directorio `data_dir` de esa instancia. El ZIP DGII vive
+como `ir.attachment`.
 
-Verificar el respaldo restaurando en una base temporal, no en producción.
+Comprobar el respaldo en una base **temporal nueva**, nunca sobreescribiendo
+`korventis`, `baruchcafe` ni producción:
 
 ```bash
 createdb <DB_VERIFY>
 pg_restore --dbname=<DB_VERIFY> <RESPALDO>.dump
 ```
 
-## Reversión de datos del padrón (sin desinstalar)
+## Padrón incorrecto (sin desinstalar)
 
-Si la última importación es incorrecta y existe versión `Anterior recuperable`:
+Si existe versión `Anterior recuperable`:
 
-1. Contactos > Padrón DGII > Versiones.
-2. Abrir la versión anterior.
-3. Restaurar esta versión.
+1. Desactivar la tarea `Korventis: actualizar padrón DGII`.
+2. Contactos > Padrón DGII > Versiones > Restaurar esta versión.
 
-No modifica contactos, facturas ni e-NCF ya emitidos.
+Eso cambia qué versión está `active`. No reescribe `res.partner`, no toca
+`account.move` y no altera `korventis.fiscal.document`.
+
+## Fallo durante `-i` o `-u`
+
+Odoo corre la operación en una transacción. Si `pre-migrate` o `post-migrate`
+fallan, la estructura no debe quedar a medias. Corrija la causa (por ejemplo
+más de una versión activa) y repita el comando. No complete el esquema con SQL
+ad hoc.
+
+Si la transacción no revirtió (interrupción violenta del proceso):
+
+1. Restaurar PostgreSQL y filestore desde el respaldo previo.
+2. Dejar el código en la revisión anterior conocida.
+3. Arrancar Odoo.
+4. Verificar un e-NCF histórico y el estado del padrón.
 
 ## Reversión de una actualización de módulo
 
-1. Desactivar la tarea `Korventis: actualizar padrón DGII`.
-2. Restaurar PostgreSQL y filestore desde el respaldo previo al `-u`.
-3. Dejar el checkout de código en el tag anterior.
-4. Arrancar Odoo contra la base restaurada.
+1. Desactivar el cron DGII.
+2. Restaurar PostgreSQL y filestore del respaldo **previo al `-u`**.
+3. Checkout del tag o commit anterior.
+4. Arrancar contra la base restaurada.
 
-No “deshacer” un `-u` a medias con SQL.
+No “deshaga” un `-u` editando filas a mano.
 
-## Retirar el módulo de un entorno no productivo
+## Retirar el módulo (solo no productivo)
 
 1. Desactivar la tarea diaria.
-2. Desinstalar `korventis_partner_dgii` desde Apps.
+2. Desinstalar `korventis_partner_dgii` desde Aplicaciones.
 3. Confirmar que `korventis_l10n_do_fiscal` sigue instalado.
-4. Los `res.partner` creados permanecen. Se retiran metadatos DGII del módulo.
+4. Los contactos creados permanecen. Se retiran metadatos DGII del módulo.
    `vat` y `korventis_fiscal_document_type_id` pertenecen al núcleo fiscal.
 
-## Fallo durante `-u`
+No desinstale el núcleo fiscal si ya hay e-NCF emitidos.
 
-Odoo ejecuta la actualización en una transacción. Si `pre-migrate` o
-`post-migrate` lanzan un error, la estructura no debe quedar a medias.
-Repita el `-u` después de corregir la inconsistencia (por ejemplo más de una
-versión activa). No complete la corrección con scripts que asuman IDs de otro
-cliente.
+## Lo que nunca debe hacerse
+
+- `dropdb` sobre un cliente.
+- Borrar el filestore para “liberar el ZIP”.
+- `UPDATE` de `next_number` copiado de QA.
+- Restaurar un dump de un cliente sobre otro.

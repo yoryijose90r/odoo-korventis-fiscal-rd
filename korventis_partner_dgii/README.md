@@ -9,9 +9,19 @@ Instalación, actualización, despliegue y reversión:
 
 - `docs/INSTALL.md`
 - `docs/UPGRADE.md`
+- `docs/MULTIDB.md`
+- `docs/DGII_IMPORT.md`
+- `docs/CONFIGURATION.md`
+- `docs/QA_CHECKLIST.md`
 - `docs/PRODUCTION_DEPLOYMENT.md`
 - `docs/ROLLBACK.md`
 - `docs/DATABASE_CHANGES.md`
+
+Scripts (sin contraseñas; rechazan las bases `korventis` y `baruchcafe`):
+
+- `scripts/install_korventis.sh`
+- `scripts/verify_korventis.sh`
+- `scripts/enable_dgii_cron.sh`
 
 ## Fuente y formato
 

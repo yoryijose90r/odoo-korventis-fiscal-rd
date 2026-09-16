@@ -5,6 +5,9 @@ from odoo.tests import tagged
 from odoo.addons.korventis_l10n_do_fiscal.tests.common import (
     KorventisFiscalCommon,
 )
+from odoo.addons.korventis_partner_dgii.tests.common import (
+    park_active_registry_versions,
+)
 
 
 @tagged("post_install", "-at_install")
@@ -13,6 +16,7 @@ class TestPartnerDgiiFiscalIntegration(KorventisFiscalCommon):
     def setUpClass(cls):
         super().setUpClass()
         cls.env["res.lang"]._activate_lang("es_DO")
+        park_active_registry_versions(cls.env)
         cls.version = cls.env["korventis.dgii.rnc.version"].sudo().create(
             {
                 "name": "fiscal-integration.csv",

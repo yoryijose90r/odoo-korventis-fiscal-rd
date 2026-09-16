@@ -10,24 +10,14 @@ El despliegue de producción, cuando se autorice, debe ser:
 2. Código aprobado desde `main` y un tag de versión (por ejemplo
    `korventis-partner-dgii-18.0.1.1.0`). No desplegar commits sueltos de
    `feature/*`.
-3. Instalación o actualización estándar:
-
-   ```bash
-   <ODOO_BIN> -c <ODOO_CONF_PROD> -d <DB_PROD> \
-     -i korventis_partner_dgii --stop-after-init
-   ```
-
-   o, si el módulo ya está instalado:
-
-   ```bash
-   <ODOO_BIN> -c <ODOO_CONF_PROD> -d <DB_PROD> \
-     -u korventis_partner_dgii --stop-after-init
-   ```
-
+3. Instalación o actualización con `scripts/install_korventis.sh` (`install` o
+   `upgrade`) y `scripts/verify_korventis.sh`, o los equivalentes `-i`/`-u`
+   documentados en `docs/INSTALL.md` y `docs/UPGRADE.md`.
 4. Las migraciones versionadas corren dentro de `-u`. No pegar SQL de QA.
 5. Validaciones automáticas (`--test-enable` en una copia, no necesariamente
    en la base viva) y revisión de Contactos > Padrón DGII > Estado.
-6. Primera importación DGII controlada, reintentable, fuera del `-i`.
+6. Primera importación DGII controlada, reintentable, fuera del `-i`
+   (`docs/DGII_IMPORT.md`).
 7. Verificación funcional: búsqueda, alta DGII, registro manual, factura en
    borrador sin asignar e-NCF al crear el contacto.
 8. Registrar la versión instalada (Apps + tag + SHA de `main`).

@@ -6,6 +6,11 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
 
+from odoo.addons.korventis_partner_dgii.tests.common import (
+    park_active_registry_versions,
+)
+
+
 @tagged("post_install", "-at_install")
 class TestPartnerDgii(TransactionCase):
     @classmethod
@@ -14,6 +19,7 @@ class TestPartnerDgii(TransactionCase):
         cls.env["res.lang"]._activate_lang("es_DO")
         cls.e31 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e31")
         cls.e32 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e32")
+        park_active_registry_versions(cls.env)
         cls.version = cls.env["korventis.dgii.rnc.version"].sudo().create(
             {
                 "name": "fixture.csv",

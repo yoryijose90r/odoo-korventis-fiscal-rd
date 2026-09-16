@@ -15,6 +15,9 @@ from odoo.addons.korventis_partner_dgii.services.importer import (
     CSV_HEADERS,
     DgiiRegistryImporter,
 )
+from odoo.addons.korventis_partner_dgii.tests.common import (
+    official_registry_present,
+)
 
 
 SOURCE_URL = (
@@ -27,6 +30,12 @@ SOURCE_URL = (
 class TestDgiiImporter(TransactionCase):
     def setUp(self):
         super().setUp()
+        if official_registry_present(self.env):
+            self.skipTest(
+                "Los ZIP de fixture son pequeños y no pueden activarse contra "
+                "un padrón oficial ya cargado. Use una base sin importación "
+                "real para esta clase."
+            )
         parameters = self.env["ir.config_parameter"].sudo()
         parameters.set_param("korventis_partner_dgii.minimum_records", "1")
         parameters.set_param("korventis_partner_dgii.minimum_volume_ratio", "0.01")
