@@ -227,7 +227,9 @@ class DgiiRegistryImporter:
                     request_headers.pop("If-Modified-Since", None)
                     request_headers["Range"] = "bytes=%s-" % offset
                 try:
-                    with self._request_download(url, request_headers) as response:
+                    response = None
+                    try:
+                        response = self._request_download(url, request_headers)
                         if response.status_code == 304 and active:
                             os.unlink(path)
                             return {"not_modified": True, "path": None}
@@ -276,6 +278,8 @@ class DgiiRegistryImporter:
                             "etag": response.headers.get("ETag"),
                             "last_modified": response.headers.get("Last-Modified"),
                         }
+                    finally:
+                        self._close_response(response)
                 except requests.RequestException as exc:
                     last_error = exc
                     if attempt + 1 == DOWNLOAD_ATTEMPTS:
@@ -333,11 +337,19 @@ class DgiiRegistryImporter:
             if response.status_code not in REDIRECT_STATUS:
                 return response
             location = response.headers.get("Location")
-            response.close()
+            self._close_response(response)
             if not location:
                 raise UserError(_("La DGII redirigió sin un destino válido."))
             current_url = urljoin(current_url, location)
         raise UserError(_("La DGII excedió el número de redirecciones permitidas."))
+
+    def _close_response(self, response):
+        if response is None:
+            return
+        try:
+            response.close()
+        except Exception:
+            _logger.debug("DGII HTTP response had no connection to close", exc_info=True)
 
     def _content_range_start(self, response):
         parsed = self._parse_content_range(response)

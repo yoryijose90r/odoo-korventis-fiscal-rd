@@ -83,6 +83,29 @@ class TestPartnerDgii(TransactionCase):
         self.assertFalse(Registry.search_active_registry("%"))
         self.assertFalse(Registry.search_active_registry("PORTAL%"))
 
+    def test_like_percent_and_underscore_are_literal(self):
+        record = self._registry_record(
+            "101000077",
+            "COMERCIAL 50% OFERTA_ESPECIAL",
+            "ACTIVO",
+        )
+        Registry = self.env["korventis.dgii.rnc"]
+        self.assertEqual(
+            Registry.search_active_registry("COMERCIAL 50% OFERTA_ESPECIAL"),
+            record,
+        )
+        self.assertEqual(
+            Registry.search_active_registry("COMERCIAL 50%"),
+            record,
+        )
+        self.assertNotIn(record, Registry.search_active_registry("%OFERTA"))
+        self.assertFalse(Registry.search_active_registry("%"))
+        self.assertFalse(Registry.search_active_registry("PORTAL D_MINICANA"))
+        self.assertEqual(
+            Registry.search_active_registry("COMERCIAL 50% OFERTA_ESPECIAL"),
+            record,
+        )
+
     def test_search_does_not_create_contact(self):
         before = self.env["res.partner"].search_count([])
         wizard = self.env["korventis.partner.lookup.wizard"].create(

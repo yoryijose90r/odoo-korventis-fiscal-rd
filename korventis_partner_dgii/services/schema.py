@@ -1,4 +1,4 @@
-"""Idempotent PostgreSQL helpers used by install, upgrade and init()."""
+"""Idempotent PostgreSQL helpers used by install, upgrade and model init."""
 
 CUSTOM_INDEXES = (
     {

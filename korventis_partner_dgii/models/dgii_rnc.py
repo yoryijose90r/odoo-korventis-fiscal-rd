@@ -60,23 +60,17 @@ class KorventisDgiiRnc(models.Model):
             return self.browse()
         normalized_id = normalize_identification(query)
         normalized_name = normalize_name(query)
-        like_escape = " ESCAPE '\\\\'"
+        like_escape = " ESCAPE CHR(92)"
         if normalized_id.isdigit():
             where = "r.rnc_normalizado LIKE %s" + like_escape
             filter_parameters = [escape_like(normalized_id) + "%"]
         else:
             where = (
-                """
-                (
-                    r.razon_social_normalizada LIKE %s"""
-                + like_escape
-                + """
-                    OR to_tsvector(
-                        'simple'::regconfig,
-                        r.razon_social_normalizada
-                    ) @@ plainto_tsquery('simple'::regconfig, %s)
-                )
-                """
+                "("
+                "r.razon_social_normalizada LIKE %s" + like_escape + " "
+                "OR to_tsvector('simple'::regconfig, r.razon_social_normalizada) "
+                "@@ plainto_tsquery('simple'::regconfig, %s)"
+                ")"
             )
             filter_parameters = [escape_like(normalized_name) + "%", normalized_name]
         self.env.cr.execute(

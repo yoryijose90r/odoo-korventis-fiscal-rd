@@ -9,11 +9,7 @@ AST = timezone(timedelta(hours=-4))
 
 
 def santo_domingo_tz():
-    """Return a tzinfo for Santo Domingo without using the OS local zone.
-
-    America/Santo_Domingo is AST (UTC-4) and does not observe DST. IANA data
-    is preferred when present; otherwise a fixed UTC-4 offset is used.
-    """
+    """Return Santo Domingo tzinfo without using the operating-system zone."""
     try:
         from zoneinfo import ZoneInfo
 
