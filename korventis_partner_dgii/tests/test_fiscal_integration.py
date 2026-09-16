@@ -1,4 +1,5 @@
 from odoo import fields
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from odoo.addons.korventis_l10n_do_fiscal.tests.common import (
@@ -63,3 +64,23 @@ class TestPartnerDgiiFiscalIntegration(KorventisFiscalCommon):
         self.assertEqual(document.fiscal_number, fiscal_number)
         self.assertEqual(document.state, "issued")
         self.assertEqual(self.sequence_e31.next_number, sequence_next)
+
+    def test_lookup_is_rejected_on_vendor_bills(self):
+        move = self.env["account.move"].create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": self.partner_rnc.id,
+                "journal_id": self.company_data["default_journal_purchase"].id,
+            }
+        )
+        with self.assertRaises(UserError):
+            move.action_korventis_lookup_partner()
+        wizard = self.env["korventis.partner.lookup.wizard"].with_context(
+            active_model="account.move",
+            active_id=move.id,
+        ).create({})
+        partner = self.env["res.partner"].korventis_create_from_dgii(
+            self.registry_record
+        )
+        with self.assertRaises(UserError):
+            wizard._use_partner(partner)

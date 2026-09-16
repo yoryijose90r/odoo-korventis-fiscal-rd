@@ -168,9 +168,10 @@ class KorventisPartnerLookupWizard(models.TransientModel):
                 not move
                 or move.state != "draft"
                 or move.korventis_fiscal_document_id
+                or move.move_type not in type(move).KORVENTIS_LOOKUP_MOVE_TYPES
             ):
                 raise UserError(
-                    _("Sólo puede cambiarse el cliente de una factura fiscal en borrador.")
+                    _("Sólo puede cambiarse el cliente de una factura de cliente en borrador.")
                 )
             move.write({"partner_id": partner.id})
             return {"type": "ir.actions.act_window_close"}

@@ -28,3 +28,12 @@ def has_unsafe_control_characters(value):
         and character not in "\t\r\n"
         for character in value or ""
     )
+
+
+def escape_like(value):
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )

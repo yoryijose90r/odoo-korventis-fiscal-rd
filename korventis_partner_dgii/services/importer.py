@@ -7,10 +7,11 @@ import json
 import logging
 import os
 import pathlib
+import re
 import stat
 import tempfile
 import zipfile
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -31,8 +32,11 @@ MAX_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 25
 MAX_LOGGED_ISSUES = 50
 DOWNLOAD_ATTEMPTS = 3
+MAX_REDIRECTS = 3
 CONNECT_TIMEOUT = 15
 READ_TIMEOUT = 120
+REDIRECT_STATUS = {301, 302, 303, 307, 308}
+CONTENT_RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)$")
 COPY_BATCH_SIZE = 5000
 CSV_HEADERS = [
     "RNC",
@@ -213,15 +217,16 @@ class DgiiRegistryImporter:
                     request_headers.pop("If-Modified-Since", None)
                     request_headers["Range"] = "bytes=%s-" % offset
                 try:
-                    with requests.get(
-                        url,
-                        headers=request_headers,
-                        stream=True,
-                        timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
-                    ) as response:
+                    with self._request_download(url, request_headers) as response:
                         if response.status_code == 304 and active:
                             os.unlink(path)
                             return {"not_modified": True, "path": None}
+                        if response.status_code == 416 and offset:
+                            with open(path, "wb"):
+                                pass
+                            raise requests.RequestException(
+                                "HTTP 416: se reinicia la descarga desde el inicio"
+                            )
                         if response.status_code not in (200, 206):
                             response.raise_for_status()
                             raise UserError(
@@ -230,6 +235,12 @@ class DgiiRegistryImporter:
                             )
                         if offset and response.status_code == 200:
                             offset = 0
+                        if response.status_code == 206:
+                            range_start = self._content_range_start(response)
+                            if range_start != offset:
+                                raise requests.RequestException(
+                                    "Content-Range no coincide con el desplazamiento local"
+                                )
                         mode = "ab" if offset and response.status_code == 206 else "wb"
                         expected = self._expected_download_size(response, offset)
                         if expected and expected > MAX_ARCHIVE_BYTES:
@@ -267,11 +278,46 @@ class DgiiRegistryImporter:
                 pass
             raise
 
+    def _request_download(self, url, headers):
+        current_url = url
+        for _redirect in range(MAX_REDIRECTS + 1):
+            current_url = self._validate_official_url(current_url)
+            response = requests.get(
+                current_url,
+                headers=headers,
+                stream=True,
+                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+                allow_redirects=False,
+            )
+            if response.status_code not in REDIRECT_STATUS:
+                return response
+            location = response.headers.get("Location")
+            response.close()
+            if not location:
+                raise UserError(_("La DGII redirigió sin un destino válido."))
+            current_url = urljoin(current_url, location)
+        raise UserError(_("La DGII excedió el número de redirecciones permitidas."))
+
+    def _content_range_start(self, response):
+        parsed = self._parse_content_range(response)
+        return parsed[0] if parsed else None
+
+    def _parse_content_range(self, response):
+        header = (response.headers.get("Content-Range") or "").strip()
+        match = CONTENT_RANGE_RE.match(header)
+        if not match:
+            return None
+        total = match.group(3)
+        return (
+            int(match.group(1)),
+            int(match.group(2)),
+            int(total) if total.isdigit() else None,
+        )
+
     def _expected_download_size(self, response, offset):
-        content_range = response.headers.get("Content-Range", "")
-        if "/" in content_range:
-            total = content_range.rsplit("/", 1)[1]
-            return int(total) if total.isdigit() else None
+        parsed = self._parse_content_range(response)
+        if parsed and parsed[2] is not None:
+            return parsed[2]
         content_length = response.headers.get("Content-Length")
         if content_length and content_length.isdigit():
             return offset + int(content_length)
@@ -440,25 +486,20 @@ class DgiiRegistryImporter:
 
     def _iter_txt_rows(self, path, member):
         with zipfile.ZipFile(path) as archive, archive.open(member) as binary:
-            accumulated = b""
-            start_line = 1
             for line_number, raw_line in enumerate(binary, 1):
-                if not accumulated:
-                    start_line = line_number
-                accumulated += raw_line.rstrip(b"\r\n")
-                pipe_count = accumulated.count(b"|")
-                if pipe_count < 10 and len(accumulated) <= 4096:
+                line = raw_line.rstrip(b"\r\n")
+                if not line:
                     continue
-                if pipe_count != 10 or len(accumulated) > 4096:
+                pipe_count = line.count(b"|")
+                if pipe_count != 10 or len(line) > 4096:
                     self._reject(
-                        start_line,
+                        line_number,
                         _("Registro TXT truncado o con separadores inesperados."),
                     )
                     self.stats["total_rows"] += 1
-                    accumulated = b""
                     continue
-                columns = accumulated.decode("latin-1").split("|")
-                yield start_line, [
+                columns = line.decode("latin-1").split("|")
+                yield line_number, [
                     columns[0],
                     columns[1],
                     columns[3],
@@ -466,10 +507,6 @@ class DgiiRegistryImporter:
                     columns[9],
                     columns[10],
                 ]
-                accumulated = b""
-            if accumulated:
-                self._reject(start_line, _("Registro TXT incompleto al final del archivo."))
-                self.stats["total_rows"] += 1
 
     def _validate_row(self, source_line, row):
         if len(row) != 6:

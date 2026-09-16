@@ -2,6 +2,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError
 
 from odoo.addons.korventis_partner_dgii.services.normalization import (
+    escape_like,
     normalize_identification,
     normalize_name,
 )
@@ -71,20 +72,25 @@ class KorventisDgiiRnc(models.Model):
             return self.browse()
         normalized_id = normalize_identification(query)
         normalized_name = normalize_name(query)
+        like_escape = " ESCAPE '\\\\'"
         if normalized_id.isdigit():
-            where = "r.rnc_normalizado LIKE %s"
-            filter_parameters = [normalized_id + "%"]
+            where = "r.rnc_normalizado LIKE %s" + like_escape
+            filter_parameters = [escape_like(normalized_id) + "%"]
         else:
-            where = """
+            where = (
+                """
                 (
-                    r.razon_social_normalizada LIKE %s
+                    r.razon_social_normalizada LIKE %s"""
+                + like_escape
+                + """
                     OR to_tsvector(
                         'simple'::regconfig,
                         r.razon_social_normalizada
                     ) @@ plainto_tsquery('simple'::regconfig, %s)
                 )
-            """
-            filter_parameters = [normalized_name + "%", normalized_name]
+                """
+            )
+            filter_parameters = [escape_like(normalized_name) + "%", normalized_name]
         self.env.cr.execute(
             f"""
             SELECT r.id

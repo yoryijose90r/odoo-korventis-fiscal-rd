@@ -80,6 +80,8 @@ class TestPartnerDgii(TransactionCase):
             Registry.search_active_registry("101000001"),
             self.active_record,
         )
+        self.assertFalse(Registry.search_active_registry("%"))
+        self.assertFalse(Registry.search_active_registry("PORTAL%"))
 
     def test_search_does_not_create_contact(self):
         before = self.env["res.partner"].search_count([])

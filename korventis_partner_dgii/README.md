@@ -25,13 +25,18 @@ versión activa/anterior.
 ## Importación
 
 - Descarga temporal con límites, timeouts, tres intentos y reanudación HTTP.
+- Las redirecciones se siguen sólo hacia ZIP HTTPS de `dgii.gov.do`.
+- `Content-Range` debe coincidir con el desplazamiento local; HTTP 416 reinicia.
 - SHA-256 y soporte de `ETag`/`Last-Modified`.
 - Lectura streaming y `COPY` por lotes hacia una tabla temporal PostgreSQL.
 - Validación de volumen, duplicados, rechazos y estructura.
 - Activación atómica después de completar staging.
+- Índice único parcial: como máximo una versión `active`.
 - Advisory lock para evitar ejecuciones simultáneas.
 - Se conserva una versión anterior recuperable.
 - Un fallo conserva la versión activa y queda registrado sin detener Odoo.
+- Las URLs del asistente se guardan para el cron sólo tras una ejecución
+  correcta o sin cambios.
 
 Política de anomalías:
 

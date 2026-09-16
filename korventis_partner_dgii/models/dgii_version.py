@@ -44,6 +44,16 @@ class KorventisDgiiRncVersion(models.Model):
         ),
     ]
 
+    def init(self):
+        self.env.cr.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                korventis_dgii_rnc_version_one_active_idx
+                ON korventis_dgii_rnc_version (state)
+                WHERE state = 'active'
+            """
+        )
+
     def action_restore_previous(self):
         self.ensure_one()
         if not (

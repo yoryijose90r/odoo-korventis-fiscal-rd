@@ -38,7 +38,11 @@ class KorventisDgiiImportWizard(models.TransientModel):
             if self.fallback_url
             else None
         )
-        if self.save_for_scheduled_import:
+        run = self.env["korventis.dgii.import.run"].run_import(
+            source_url,
+            fallback_url=fallback_url,
+        )
+        if self.save_for_scheduled_import and run.state in ("success", "unchanged"):
             parameters = self.env["ir.config_parameter"].sudo()
             parameters.set_param(
                 "korventis_partner_dgii.source_url",
@@ -48,10 +52,6 @@ class KorventisDgiiImportWizard(models.TransientModel):
                 "korventis_partner_dgii.fallback_url",
                 fallback_url or "",
             )
-        run = self.env["korventis.dgii.import.run"].run_import(
-            source_url,
-            fallback_url=fallback_url,
-        )
         return {
             "type": "ir.actions.act_window",
             "name": _("Ejecución de importación DGII"),

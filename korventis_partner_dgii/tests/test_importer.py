@@ -317,3 +317,92 @@ class TestDgiiImporter(TransactionCase):
         )
         with self.assertRaises(UserError):
             importer._validate_official_url("https://example.com/padron.zip")
+
+    def test_official_csv_header_matches_phase_a_latin1(self):
+        header = (
+            "RNC,RAZÓN SOCIAL,ACTIVIDAD ECONÓMICA,"
+            "FECHA DE INICIO OPERACIONES,ESTADO,RÉGIMEN DE PAGO"
+        )
+        self.assertEqual(header.split(","), CSV_HEADERS)
+        encoded = header.encode("latin-1")
+        path = self._zip_path(
+            [
+                (
+                    "RNC_Contribuyentes_Actualizado_05_Sep_2026.csv",
+                    encoded + b"\r\n" + self._csv_bytes(self._valid_rows()).split(b"\r\n", 1)[1],
+                )
+            ]
+        )
+        self.assertEqual(self._run_path(path).state, "success")
+
+    def test_txt_malformed_line_does_not_merge_with_next(self):
+        content = (
+            "101000011|EMPRESA ACTIVA SRL||SERVICIOS| | | | |01/01/2020|ACTIVO\r\n"
+            "|NORMAL\r\n"
+            "101000011|EMPRESA ACTIVA SRL||SERVICIOS| | | | |"
+            "01/01/2020|ACTIVO|NORMAL\r\n"
+        ).encode("latin-1")
+        path = self._zip_path([("TMP/DGII_RNC.TXT", content)])
+        run = self._run_path(
+            path,
+            "https://dgii.gov.do/app/WebApps/Consultas/RNC/DGII_RNC.zip",
+        )
+        self.assertEqual(run.state, "success")
+        self.assertEqual(run.accepted_count, 1)
+        self.assertEqual(run.rejected_count, 2)
+
+    def test_external_redirect_is_rejected(self):
+        importer = DgiiRegistryImporter(
+            self.env,
+            self.env["korventis.dgii.import.run"],
+        )
+        redirect = requests.Response()
+        redirect.status_code = 302
+        redirect.headers["Location"] = "https://example.com/padron.zip"
+        with patch(
+            "odoo.addons.korventis_partner_dgii.services.importer.requests.get",
+            return_value=redirect,
+        ):
+            with self.assertRaises(UserError):
+                importer._download(SOURCE_URL, None)
+
+    def test_partial_content_range_must_match_local_offset(self):
+        importer = DgiiRegistryImporter(
+            self.env,
+            self.env["korventis.dgii.import.run"],
+        )
+        response = requests.Response()
+        response.status_code = 206
+        response.headers["Content-Range"] = "bytes 50-60/100"
+        response.headers["Content-Length"] = "11"
+        with patch(
+            "odoo.addons.korventis_partner_dgii.services.importer.requests.get",
+            return_value=response,
+        ):
+            with self.assertRaises(requests.RequestException):
+                importer._download(SOURCE_URL, None)
+
+    def test_failed_import_does_not_persist_cron_urls(self):
+        parameters = self.env["ir.config_parameter"].sudo()
+        parameters.set_param("korventis_partner_dgii.source_url", SOURCE_URL)
+        parameters.set_param("korventis_partner_dgii.fallback_url", "")
+        wizard = self.env["korventis.dgii.import.wizard"].create(
+            {
+                "source_url": SOURCE_URL,
+                "fallback_url": (
+                    "https://dgii.gov.do/app/WebApps/Consultas/RNC/DGII_RNC.zip"
+                ),
+                "save_for_scheduled_import": True,
+            }
+        )
+        with patch.object(
+            DgiiRegistryImporter,
+            "_download",
+            side_effect=requests.RequestException("offline"),
+        ):
+            wizard.action_import()
+        self.assertEqual(
+            parameters.get_param("korventis_partner_dgii.source_url"),
+            SOURCE_URL,
+        )
+        self.assertFalse(parameters.get_param("korventis_partner_dgii.fallback_url"))
