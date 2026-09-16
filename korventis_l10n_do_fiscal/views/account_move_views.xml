@@ -7,6 +7,9 @@
         <field name="arch" type="xml">
             <xpath expr="//sheet//field[@name='partner_id'][@widget='res_partner_many2one']" position="after">
                 <field name="korventis_fiscal_type_locked" invisible="1"/>
+                <field name="korventis_fiscal_document_type_id" readonly="1"/>
+                <field name="korventis_fiscal_number" readonly="1"/>
+                <field name="korventis_fiscal_state" readonly="1"/>
             </xpath>
             <xpath expr="//sheet/notebook" position="inside">
                 <page string="Información Fiscal RD"

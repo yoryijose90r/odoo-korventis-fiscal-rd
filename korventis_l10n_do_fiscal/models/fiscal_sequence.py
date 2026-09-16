@@ -1,7 +1,11 @@
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from odoo.addons.korventis_l10n_do_fiscal.fields import FiscalBigInt
+
+_logger = logging.getLogger(__name__)
 
 # e-NCF sequential width is 10 digits. Exhausted sequences store range_end + 1
 # (see next_in_range), which may be 10_000_000_000 and still fits in BIGINT.
@@ -10,6 +14,7 @@ FISCAL_SEQUENTIAL_MAX = 9_999_999_999
 
 class KorventisFiscalSequence(models.Model):
     _name = "korventis.fiscal.sequence"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
     _description = "Korventis Fiscal Sequence Range"
     _order = "company_id, document_type_id, range_start"
     _check_company_auto = True
@@ -35,6 +40,33 @@ class KorventisFiscalSequence(models.Model):
     valid_from = fields.Date()
     valid_until = fields.Date()
     active = fields.Boolean(default=True)
+    warning_threshold_percent = fields.Float(
+        string="Warning threshold (%)",
+        default=20.0,
+        required=True,
+        help="Korventis operational policy. It does not represent a DGII rule.",
+    )
+    total_numbers = FiscalBigInt(compute="_compute_usage_metrics")
+    used_numbers = FiscalBigInt(compute="_compute_usage_metrics")
+    remaining_numbers = FiscalBigInt(compute="_compute_usage_metrics")
+    used_percent = fields.Float(compute="_compute_usage_metrics", digits=(16, 2))
+    remaining_percent = fields.Float(compute="_compute_usage_metrics", digits=(16, 2))
+    operational_state = fields.Selection(
+        [
+            ("available", "Available"),
+            ("warning", "Near exhaustion"),
+            ("exhausted", "Exhausted"),
+            ("expired", "Expired"),
+        ],
+        compute="_compute_operational_state",
+        string="Operational status",
+    )
+    warning_triggered = fields.Boolean(
+        readonly=True,
+        copy=False,
+        help="Set once the range first produces a low-availability activity.",
+    )
+    warning_triggered_at = fields.Datetime(readonly=True, copy=False)
 
     _sql_constraints = [
         (
@@ -44,8 +76,8 @@ class KorventisFiscalSequence(models.Model):
         ),
         (
             "range_start_non_negative",
-            "CHECK(range_start >= 0)",
-            "Range start cannot be negative.",
+            "CHECK(range_start >= 1)",
+            "Range start must be at least 1.",
         ),
         (
             "range_end_ten_digits",
@@ -58,6 +90,41 @@ class KorventisFiscalSequence(models.Model):
             "Next number must stay within the authorized range (or one past the end when exhausted).",
         ),
     ]
+
+    @api.depends("range_start", "range_end", "next_number")
+    def _compute_usage_metrics(self):
+        for rec in self:
+            total = max((rec.range_end or 0) - (rec.range_start or 0) + 1, 0)
+            used = min(max((rec.next_number or 0) - (rec.range_start or 0), 0), total)
+            remaining = max(total - used, 0)
+            rec.total_numbers = total
+            rec.used_numbers = used
+            rec.remaining_numbers = remaining
+            rec.used_percent = (used / total * 100.0) if total else 0.0
+            rec.remaining_percent = (remaining / total * 100.0) if total else 0.0
+
+    @api.depends(
+        "valid_until",
+        "next_number",
+        "range_end",
+        "remaining_numbers",
+        "remaining_percent",
+        "warning_threshold_percent",
+    )
+    def _compute_operational_state(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.valid_until and today > rec.valid_until:
+                rec.operational_state = "expired"
+            elif rec.next_number > rec.range_end:
+                rec.operational_state = "exhausted"
+            elif (
+                rec.remaining_numbers > 0
+                and rec.remaining_percent <= rec.warning_threshold_percent
+            ):
+                rec.operational_state = "warning"
+            else:
+                rec.operational_state = "available"
 
     @api.depends("company_id", "document_type_id", "prefix", "range_start", "range_end")
     def _compute_name(self):
@@ -118,9 +185,9 @@ class KorventisFiscalSequence(models.Model):
     @api.constrains("range_start", "range_end", "next_number")
     def _check_ten_digit_bounds(self):
         for rec in self:
-            if rec.range_start < 0 or rec.range_start > FISCAL_SEQUENTIAL_MAX:
+            if rec.range_start < 1 or rec.range_start > FISCAL_SEQUENTIAL_MAX:
                 raise ValidationError(
-                    _("range_start must be between 0 and 9,999,999,999.")
+                    _("range_start must be between 1 and 9,999,999,999.")
                 )
             if rec.range_end < 0 or rec.range_end > FISCAL_SEQUENTIAL_MAX:
                 raise ValidationError(
@@ -131,6 +198,14 @@ class KorventisFiscalSequence(models.Model):
             if rec.next_number > rec.range_end + 1:
                 raise ValidationError(
                     _("next_number cannot exceed range_end by more than one (exhausted sentinel).")
+                )
+
+    @api.constrains("warning_threshold_percent")
+    def _check_warning_threshold_percent(self):
+        for rec in self:
+            if not 1.0 <= rec.warning_threshold_percent <= 100.0:
+                raise ValidationError(
+                    _("Warning threshold must be between 1 and 100 percent.")
                 )
 
     @api.constrains("prefix", "document_type_id")
@@ -222,3 +297,74 @@ class KorventisFiscalSequence(models.Model):
                         )
                     )
         return super().write(vals)
+
+    def _korventis_warning_responsible(self):
+        self.ensure_one()
+        group = self.env.ref(
+            "korventis_l10n_do_fiscal.group_fiscal_manager",
+            raise_if_not_found=False,
+        )
+        managers = group.sudo().users.filtered(
+            lambda user: user.active and self.company_id in user.company_ids
+        )
+        return managers.sorted("id")[:1] or self.env.user
+
+    def _korventis_trigger_warning_if_needed(self):
+        """Schedule one non-blocking operational warning after allocation.
+
+        ``allocate()`` holds the sequence row lock while calling this method,
+        which serializes the anti-spam flag across PostgreSQL sessions.
+        """
+        self.ensure_one()
+        try:
+            self.invalidate_recordset(
+                [
+                    "next_number",
+                    "warning_triggered",
+                    "warning_triggered_at",
+                ]
+            )
+            if self.warning_triggered or self.operational_state != "warning":
+                return False
+            responsible = self._korventis_warning_responsible()
+            with self.env.cr.savepoint():
+                self.sudo().activity_schedule(
+                    "mail.mail_activity_data_todo",
+                    summary=_("Secuencia fiscal próxima a agotarse"),
+                    note=_(
+                        "Esta secuencia fiscal está próxima a agotarse. "
+                        "Quedan %(remaining)s de %(total)s comprobantes disponibles. "
+                        "Considere gestionar una nueva secuencia ante DGII.",
+                        remaining=self.remaining_numbers,
+                        total=self.total_numbers,
+                    ),
+                    user_id=responsible.id,
+                )
+                self.sudo().write(
+                    {
+                        "warning_triggered": True,
+                        "warning_triggered_at": fields.Datetime.now(),
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            # An operational notification must never block fiscal issuance.
+            _logger.exception(
+                "Could not schedule fiscal sequence warning for sequence_id=%s",
+                self.id,
+            )
+            return False
+        self.invalidate_recordset(["warning_triggered", "warning_triggered_at"])
+        return True
+
+    def unlink(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            expired = bool(rec.valid_until and today > rec.valid_until)
+            if expired or rec.next_number > rec.range_start or rec._has_consumed_numbers():
+                raise UserError(
+                    _(
+                        "Used, exhausted or expired fiscal ranges must be kept "
+                        "for historical audit."
+                    )
+                )
+        return super().unlink()

@@ -4,13 +4,22 @@
         <field name="name">korventis.fiscal.sequence.list</field>
         <field name="model">korventis.fiscal.sequence</field>
         <field name="arch" type="xml">
-            <list>
+            <list decoration-warning="operational_state == 'warning'"
+                  decoration-danger="operational_state == 'expired'"
+                  decoration-muted="operational_state == 'exhausted'">
                 <field name="company_id" groups="base.group_multi_company"/>
                 <field name="document_type_id"/>
                 <field name="prefix"/>
                 <field name="range_start"/>
                 <field name="range_end"/>
                 <field name="next_number"/>
+                <field name="total_numbers"/>
+                <field name="used_numbers"/>
+                <field name="remaining_numbers"/>
+                <field name="used_percent"/>
+                <field name="remaining_percent"/>
+                <field name="warning_threshold_percent"/>
+                <field name="operational_state"/>
                 <field name="valid_from"/>
                 <field name="valid_until"/>
                 <field name="active"/>
@@ -23,6 +32,16 @@
         <field name="arch" type="xml">
             <form>
                 <sheet>
+                    <div class="alert alert-warning"
+                         role="alert"
+                         invisible="operational_state != 'warning'">
+                        <strong>Esta secuencia fiscal está próxima a agotarse.</strong>
+                        Quedan
+                        <field name="remaining_numbers" readonly="1" class="oe_inline"/>
+                        de
+                        <field name="total_numbers" readonly="1" class="oe_inline"/>
+                        comprobantes disponibles. Considere gestionar una nueva secuencia ante DGII.
+                    </div>
                     <group>
                         <group>
                             <field name="company_id" groups="base.group_multi_company"/>
@@ -38,7 +57,23 @@
                             <field name="valid_until"/>
                         </group>
                     </group>
+                    <group string="Consumo y alerta preventiva">
+                        <group>
+                            <field name="total_numbers" readonly="1"/>
+                            <field name="used_numbers" readonly="1"/>
+                            <field name="remaining_numbers" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="used_percent" readonly="1"/>
+                            <field name="remaining_percent" readonly="1"/>
+                            <field name="warning_threshold_percent"/>
+                            <field name="operational_state" readonly="1"/>
+                            <field name="warning_triggered" readonly="1"/>
+                            <field name="warning_triggered_at" readonly="1"/>
+                        </group>
+                    </group>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>

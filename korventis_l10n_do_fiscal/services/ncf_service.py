@@ -116,7 +116,14 @@ class NcfService:
         )
         if not cr.rowcount:
             raise UserError(_("Fiscal sequence company mismatch during allocation."))
-        sequence.invalidate_recordset(["next_number"])
+        sequence.invalidate_recordset(
+            [
+                "next_number",
+                "warning_triggered",
+                "warning_triggered_at",
+            ]
+        )
+        sequence._korventis_trigger_warning_if_needed()
         _logger.info(
             "korventis fiscal allocated company_id=%s type_id=%s number=%s",
             company_id,

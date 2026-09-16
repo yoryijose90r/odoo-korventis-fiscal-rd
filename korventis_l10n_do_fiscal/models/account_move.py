@@ -55,13 +55,10 @@ class AccountMove(models.Model):
             if move.move_type == "out_refund":
                 move.korventis_fiscal_document_type_id = self._korventis_e34()
                 continue
-            if move.korventis_fiscal_document_type_id:
-                continue
             partner = move.partner_id.commercial_partner_id
-            if partner.korventis_fiscal_document_type_id:
-                move.korventis_fiscal_document_type_id = (
-                    partner.korventis_fiscal_document_type_id
-                )
+            move.korventis_fiscal_document_type_id = (
+                partner.korventis_fiscal_document_type_id or False
+            )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -101,15 +98,18 @@ class AccountMove(models.Model):
             and self.state == "draft"
         ):
             if self.move_type == "out_refund":
-                if not self.korventis_fiscal_document_type_id:
-                    vals = dict(vals, korventis_fiscal_document_type_id=self._korventis_e34().id)
-            elif not self.korventis_fiscal_document_type_id:
+                vals = dict(
+                    vals,
+                    korventis_fiscal_document_type_id=self._korventis_e34().id,
+                )
+            else:
                 partner = self.env["res.partner"].browse(vals["partner_id"]).commercial_partner_id
-                if partner.korventis_fiscal_document_type_id:
-                    vals = dict(
-                        vals,
-                        korventis_fiscal_document_type_id=partner.korventis_fiscal_document_type_id.id,
-                    )
+                vals = dict(
+                    vals,
+                    korventis_fiscal_document_type_id=(
+                        partner.korventis_fiscal_document_type_id.id or False
+                    ),
+                )
         return super().write(vals)
 
     def _korventis_should_issue(self):
@@ -127,7 +127,29 @@ class AccountMove(models.Model):
             return False
         return bool(self.korventis_fiscal_document_type_id)
 
+    def _korventis_validate_before_post(self):
+        service = NcfService(self.env)
+        for move in self:
+            if not move.company_id.korventis_fiscal_enabled:
+                continue
+            if (
+                move.move_type == "out_invoice"
+                and not move.korventis_fiscal_document_type_id
+            ):
+                raise UserError(
+                    _(
+                        "Debe seleccionar un tipo de comprobante fiscal antes "
+                        "de contabilizar la factura."
+                    )
+                )
+            if move._korventis_should_issue() and not move.korventis_fiscal_document_id:
+                service.find_sequence(
+                    move.company_id,
+                    move.korventis_fiscal_document_type_id,
+                )
+
     def _post(self, soft=True):
+        self._korventis_validate_before_post()
         posted = super()._post(soft=soft)
         service = NcfService(self.env)
         for move in posted:

@@ -194,7 +194,14 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                 "document(s); refusing to delete."
                 % (leftover.id, valid_from, valid_until, docs)
             )
-        leftover.unlink()
+        # Disposable test DB only: product code intentionally prevents deleting
+        # consumed range history. This uniquely fingerprinted fixture has no
+        # fiscal documents and must not survive a committed concurrency test.
+        env.cr.execute(
+            "DELETE FROM korventis_fiscal_sequence WHERE id = %s",
+            (leftover.id,),
+        )
+        env.invalidate_all()
 
     def _clear_fingerprint_leftover(self, env, company_id, type_id):
         """Remove OLD 18.0.1.2.2 leftover and any NEW fixture residue, separately."""
@@ -622,7 +629,19 @@ class TestConcurrentSequenceAllocationIsolated(TransactionCase):
                     env = api.Environment(cleanup_cr, SUPERUSER_ID, {})
                     leftover = env["korventis.fiscal.sequence"].browse(seq_id)
                     if leftover.exists():
-                        leftover.unlink()
+                        docs = env["korventis.fiscal.document"].search_count(
+                            [("sequence_id", "=", seq_id)]
+                        )
+                        if docs:
+                            raise AssertionError(
+                                "Cleanup sequence %s has %s fiscal document(s); "
+                                "refusing direct test-fixture deletion."
+                                % (seq_id, docs)
+                            )
+                        cleanup_cr.execute(
+                            "DELETE FROM korventis_fiscal_sequence WHERE id = %s",
+                            (seq_id,),
+                        )
                     cleanup_cr.commit()
                     env.invalidate_all()
                     gone = env["korventis.fiscal.sequence"].browse(seq_id)

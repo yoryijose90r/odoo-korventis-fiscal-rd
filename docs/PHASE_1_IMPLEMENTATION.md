@@ -465,3 +465,78 @@ permisos de Fiscal Manager.
 No se implementan XML/e-CF, firma, QR, TrackID, transmisión DGII, POS ni reportes
 606/607/608. Runtime QA pendiente; esta iteración solo recibe validación estática
 local antes de revisión.
+
+---
+
+# FASE 1.3.1 — Hardening manual, rangos y alertas preventivas
+
+Fecha: 2026-09-15
+Rama: `feature/manual-fiscal-invoice-hardening`
+Base: `feature/manual-fiscal-invoice` en
+`ed3ed5fdf169ef3f3f66398a7df9fa7284e5f129`
+Versión: `18.0.1.3.1`
+
+## Default fiscal y posting
+
+El default funcionaba en creación ORM porque `account.move.create()` copiaba el
+tipo del partner. En UI, el onchange solo lo copiaba si el campo estaba vacío:
+al cambiar de partner conservaba el tipo anterior. Ahora todo cambio de partner
+en draft refresca el default (o lo limpia si el nuevo partner no tiene uno). Un
+override manual posterior sigue permitido mientras la factura permanezca draft.
+
+Con fiscal core habilitado, `out_invoice` exige tipo fiscal. Antes de
+`super()._post()` se valida también que exista un rango activo, vigente y
+disponible. La ausencia de tipo o rango lanza `UserError`; la factura permanece
+draft, sin documento, número ni eventos Reserved/Issued. La asignación final
+sigue ocurriendo después del posting contable, dentro de la misma transacción,
+mediante `NcfService.allocate()`.
+
+## Semántica de `next_number`
+
+`next_number` es el **próximo número todavía no consumido**. No es el último
+emitido. Por ello:
+
+- `total_numbers = range_end - range_start + 1`
+- `used_numbers = next_number - range_start`
+- `remaining_numbers = range_end - next_number + 1`
+
+Los valores calculados se limitan al rango `0..total_numbers`. Para 1–100 con
+`next_number=80`: usados 79 y restantes 21. Después de asignar 80,
+`next_number=81`: usados 80 y restantes 20.
+
+`range_start` pasa de `>= 0` a `>= 1`, conservando el nombre del constraint SQL
+para que el upgrade reemplace su definición. `range_end`, `next_number` y
+`sequence_number` mantienen BIGINT y el máximo de diez dígitos.
+
+## Estado operativo y alerta
+
+Cada rango tiene umbral configurable `warning_threshold_percent` (20 % por
+defecto, válido entre 1 y 100), métricas de total/usados/restantes y porcentajes,
+y estado UI `available`, `warning`, `exhausted` o `expired`. Estos estados son
+operativos de Korventis, no estados ni reglas DGII. La selección fiscal continúa
+validando directamente activo, vigencia y disponibilidad.
+
+Después del UPDATE atómico de `allocate()`, y todavía bajo el row lock,
+`NcfService` delega al rango la comprobación de warning. Al cruzar el umbral con
+números disponibles, se agenda una sola actividad To Do estándar para un Fiscal
+Manager de la compañía (o el usuario emisor si no existe uno). Los campos
+`warning_triggered` y `warning_triggered_at` evitan spam. La actividad se crea
+en savepoint: un fallo de notificación se registra y no bloquea facturación.
+
+La secuencia hereda `mail.thread` y `mail.activity.mixin`; `mail` es dependencia
+oficial Odoo Community. No se introduce código Enterprise ni OCA/AGPL.
+
+## Histórico y selección de rangos
+
+`find_sequence()` conserva el rango agotado o vencido y selecciona el siguiente
+rango activo, vigente y disponible por `range_start,id`. No extiende, rebobina
+ni reutiliza rangos. Se bloquea `unlink` de rangos consumidos, agotados o
+vencidos; un rango nuevo se crea como una línea independiente. La alerta y su
+actividad permanecen asociadas al rango histórico.
+
+## Alcance excluido
+
+Sin cambios en `account.payment`, conciliación, diarios, matching o estados de
+pago. Se conserva E34 con documento original, eventos fiscales append-only,
+aislamiento multi-company, BIGINT y locking PostgreSQL. No se implementan
+sucursales, forecasting, XML, firma, QR, TrackID, DGII, POS ni 606/607/608.

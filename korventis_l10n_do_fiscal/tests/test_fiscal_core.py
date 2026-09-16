@@ -1,5 +1,8 @@
-from odoo.tests import tagged
+from unittest.mock import patch
+
+from odoo import fields
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tests import tagged
 from odoo.tools import mute_logger
 from psycopg2 import IntegrityError
 
@@ -73,6 +76,35 @@ class TestFiscalCore(KorventisFiscalCommon):
         )
         onchange_move._onchange_partner_korventis_fiscal_type()
         self.assertEqual(onchange_move.korventis_fiscal_document_type_id, self.type_e32)
+
+    def test_draft_partner_change_refreshes_fiscal_default(self):
+        move = self._create_invoice(self.partner_rnc)
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e31)
+
+        move.write({"partner_id": self.partner_final.id})
+
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e32)
+        onchange_move = self.env["account.move"].new(
+            {
+                "move_type": "out_invoice",
+                "partner_id": self.partner_rnc.id,
+                "korventis_fiscal_document_type_id": self.type_e31.id,
+            }
+        )
+        onchange_move.partner_id = self.partner_final
+        onchange_move._onchange_partner_korventis_fiscal_type()
+        self.assertEqual(
+            onchange_move.korventis_fiscal_document_type_id,
+            self.type_e32,
+        )
+
+    def test_draft_manual_fiscal_type_override_is_allowed(self):
+        move = self._create_invoice(self.partner_rnc)
+
+        move.korventis_fiscal_document_type_id = self.type_e45
+
+        self.assertEqual(move.state, "draft")
+        self.assertEqual(move.korventis_fiscal_document_type_id, self.type_e45)
 
     def test_historical_partner_snapshot(self):
         move = self._create_invoice(self.partner_rnc)
@@ -157,6 +189,254 @@ class TestFiscalCore(KorventisFiscalCommon):
                     "next_number": 50,
                 }
             )
+
+    @mute_logger("odoo.sql_db")
+    def test_range_start_zero_is_rejected(self):
+        with self.assertRaises(IntegrityError):
+            with self.env.cr.savepoint():
+                self.env["korventis.fiscal.sequence"].sudo().create(
+                    {
+                        "company_id": self.company.id,
+                        "document_type_id": self.type_e45.id,
+                        "prefix": "E45",
+                        "range_start": 0,
+                        "range_end": 10,
+                        "next_number": 0,
+                    }
+                )
+
+    def test_sequence_usage_semantics_and_warning_activity_once(self):
+        sequence = self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e45.id,
+                "prefix": "E45",
+                "range_start": 1,
+                "range_end": 100,
+                "next_number": 80,
+                "warning_threshold_percent": 20.0,
+            }
+        )
+        self.assertEqual(sequence.total_numbers, 100)
+        self.assertEqual(sequence.used_numbers, 79)
+        self.assertEqual(sequence.remaining_numbers, 21)
+        self.assertAlmostEqual(sequence.used_percent, 79.0)
+        self.assertAlmostEqual(sequence.remaining_percent, 21.0)
+        self.assertEqual(sequence.operational_state, "available")
+
+        number, raw = NcfService(self.env).allocate(sequence, company=self.company)
+
+        self.assertEqual((number, raw), ("E450000000080", 80))
+        self.assertEqual(sequence.next_number, 81)
+        self.assertEqual(sequence.used_numbers, 80)
+        self.assertEqual(sequence.remaining_numbers, 20)
+        self.assertAlmostEqual(sequence.remaining_percent, 20.0)
+        self.assertEqual(sequence.operational_state, "warning")
+        self.assertTrue(sequence.warning_triggered)
+        self.assertTrue(sequence.warning_triggered_at)
+        self.assertEqual(len(sequence.activity_ids), 1)
+
+        NcfService(self.env).allocate(sequence, company=self.company)
+
+        self.assertEqual(sequence.next_number, 82)
+        self.assertEqual(sequence.remaining_numbers, 19)
+        self.assertEqual(sequence.operational_state, "warning")
+        self.assertEqual(len(sequence.activity_ids), 1)
+
+    @mute_logger(
+        "odoo.addons.korventis_l10n_do_fiscal.models.fiscal_sequence"
+    )
+    def test_warning_activity_failure_does_not_block_invoice_and_retries(self):
+        sequence = self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e45.id,
+                "prefix": "E45",
+                "range_start": 1,
+                "range_end": 100,
+                "next_number": 80,
+                "warning_threshold_percent": 20.0,
+            }
+        )
+        move = self._create_invoice(self.partner_rnc, doc_type=self.type_e45)
+        MailActivity = type(self.env["mail.activity"])
+
+        with patch.object(
+            MailActivity,
+            "create",
+            side_effect=UserError("Simulated mail.activity creation failure"),
+        ):
+            move.action_post()
+
+        sequence.invalidate_recordset()
+        self.assertEqual(move.state, "posted")
+        self.assertEqual(move.korventis_fiscal_document_id.state, "issued")
+        self.assertEqual(sequence.next_number, 81)
+        self.assertFalse(sequence.warning_triggered)
+        self.assertFalse(sequence.warning_triggered_at)
+        self.assertFalse(sequence.activity_ids)
+
+        retry_move = self._create_invoice(
+            self.partner_rnc,
+            doc_type=self.type_e45,
+        )
+        retry_move.action_post()
+
+        sequence.invalidate_recordset()
+        self.assertEqual(retry_move.state, "posted")
+        self.assertEqual(retry_move.korventis_fiscal_document_id.state, "issued")
+        self.assertEqual(sequence.next_number, 82)
+        self.assertTrue(sequence.warning_triggered)
+        self.assertTrue(sequence.warning_triggered_at)
+        self.assertEqual(len(sequence.activity_ids), 1)
+
+    def test_warning_threshold_bounds(self):
+        for threshold in (0.0, 100.01):
+            with self.assertRaises(ValidationError):
+                self.env["korventis.fiscal.sequence"].sudo().create(
+                    {
+                        "company_id": self.company.id,
+                        "document_type_id": self.type_e45.id,
+                        "prefix": "E45",
+                        "range_start": 1,
+                        "range_end": 10,
+                        "next_number": 1,
+                        "warning_threshold_percent": threshold,
+                    }
+                )
+
+    def test_find_sequence_skips_expired_and_exhausted_ranges(self):
+        Sequence = self.env["korventis.fiscal.sequence"].sudo()
+        expired = Sequence.create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e44.id,
+                "prefix": "E44",
+                "range_start": 1,
+                "range_end": 10,
+                "next_number": 1,
+                "valid_from": "2000-01-01",
+                "valid_until": "2001-12-31",
+            }
+        )
+        exhausted = Sequence.create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e44.id,
+                "prefix": "E44",
+                "range_start": 11,
+                "range_end": 20,
+                "next_number": 21,
+            }
+        )
+        available = Sequence.create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e44.id,
+                "prefix": "E44",
+                "range_start": 21,
+                "range_end": 30,
+                "next_number": 21,
+                "valid_from": "2000-01-01",
+                "valid_until": "2099-12-31",
+            }
+        )
+
+        selected = NcfService(self.env).find_sequence(self.company, self.type_e44)
+
+        self.assertEqual(expired.operational_state, "expired")
+        self.assertEqual(exhausted.operational_state, "exhausted")
+        self.assertEqual(selected, available)
+
+    def test_allocation_continues_with_second_authorized_range(self):
+        Sequence = self.env["korventis.fiscal.sequence"].sudo()
+        first = Sequence.create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e46.id,
+                "prefix": "E46",
+                "range_start": 1,
+                "range_end": 1,
+                "next_number": 1,
+            }
+        )
+        second = Sequence.create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e46.id,
+                "prefix": "E46",
+                "range_start": 2,
+                "range_end": 10,
+                "next_number": 2,
+            }
+        )
+        service = NcfService(self.env)
+
+        selected_first = service.find_sequence(self.company, self.type_e46)
+        first_number, first_raw = service.allocate(
+            selected_first,
+            company=self.company,
+        )
+        selected_second = service.find_sequence(self.company, self.type_e46)
+        second_number, second_raw = service.allocate(
+            selected_second,
+            company=self.company,
+        )
+
+        self.assertEqual(selected_first, first)
+        self.assertEqual((first_number, first_raw), ("E460000000001", 1))
+        self.assertEqual(first.operational_state, "exhausted")
+        self.assertEqual(selected_second, second)
+        self.assertEqual((second_number, second_raw), ("E460000000002", 2))
+
+    def test_exhausted_range_without_replacement_blocks_posting(self):
+        self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e45.id,
+                "prefix": "E45",
+                "range_start": 1,
+                "range_end": 10,
+                "next_number": 11,
+            }
+        )
+        move = self._create_invoice(self.partner_rnc, doc_type=self.type_e45)
+
+        with self.assertRaises(UserError):
+            move.action_post()
+
+        move.invalidate_recordset()
+        self.assertEqual(move.state, "draft")
+        self.assertFalse(move.korventis_fiscal_document_id)
+
+    def test_consumed_or_expired_range_cannot_be_deleted(self):
+        sequence = self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e45.id,
+                "prefix": "E45",
+                "range_start": 1,
+                "range_end": 10,
+                "next_number": 1,
+            }
+        )
+        NcfService(self.env).allocate(sequence, company=self.company)
+        with self.assertRaises(UserError):
+            sequence.unlink()
+
+        expired = self.env["korventis.fiscal.sequence"].sudo().create(
+            {
+                "company_id": self.company.id,
+                "document_type_id": self.type_e46.id,
+                "prefix": "E46",
+                "range_start": 1,
+                "range_end": 10,
+                "next_number": 1,
+                "valid_until": fields.Date.to_date("2001-12-31"),
+            }
+        )
+        with self.assertRaises(UserError):
+            expired.unlink()
 
     def test_next_number_rewind(self):
         move = self._create_invoice(self.partner_rnc)
@@ -248,6 +528,37 @@ class TestFiscalCore(KorventisFiscalCommon):
         self.assertIn("No active fiscal sequence", str(caught.exception))
         self.assertEqual(move.state, "draft")
         self.assertFalse(move.korventis_fiscal_document_id)
+
+    def test_missing_fiscal_type_rolls_back_customer_invoice(self):
+        move = self._create_invoice(self.partner_rnc)
+        move.korventis_fiscal_document_type_id = False
+        next_number = self.sequence_e31.next_number
+
+        with self.assertRaises(UserError) as caught:
+            move.action_post()
+
+        move.invalidate_recordset()
+        self.sequence_e31.invalidate_recordset()
+        self.assertIn(
+            "Debe seleccionar un tipo de comprobante fiscal",
+            str(caught.exception),
+        )
+        self.assertEqual(move.state, "draft")
+        self.assertFalse(move.korventis_fiscal_document_id)
+        self.assertEqual(self.sequence_e31.next_number, next_number)
+        self.assertFalse(
+            self.env["korventis.fiscal.document"].search(
+                [("move_id", "=", move.id)]
+            )
+        )
+        self.assertFalse(
+            self.env["korventis.fiscal.event"].search(
+                [
+                    ("document_id.move_id", "=", move.id),
+                    ("event_type", "in", ("reserved", "issued")),
+                ]
+            )
+        )
 
     def test_sequence_from_other_company_is_not_used(self):
         company_b = self.env["res.company"].sudo().create(
@@ -470,7 +781,17 @@ class TestFiscalCore(KorventisFiscalCommon):
             )
         with self.assertRaises(AccessError):
             self.sequence_e32.with_user(user).write({"next_number": 2})
-        self.sequence_e32.with_user(manager).write({"next_number": 3})
+        with self.assertRaises(AccessError):
+            self.sequence_e32.with_user(user).write(
+                {"warning_threshold_percent": 15.0}
+            )
+        self.sequence_e32.with_user(manager).write(
+            {
+                "next_number": 3,
+                "warning_threshold_percent": 15.0,
+            }
+        )
+        self.assertEqual(self.sequence_e32.warning_threshold_percent, 15.0)
         move = self._create_invoice(self.partner_rnc)
         move.action_post()
         doc = move.korventis_fiscal_document_id
