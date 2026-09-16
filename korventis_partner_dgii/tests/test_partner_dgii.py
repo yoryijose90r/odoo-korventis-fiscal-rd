@@ -91,6 +91,14 @@ class TestPartnerDgii(TransactionCase):
         )
         Registry = self.env["korventis.dgii.rnc"]
         self.assertEqual(
+            Registry.search_active_registry("Portal Dominicana"),
+            self.active_record,
+        )
+        self.assertEqual(
+            Registry.search_active_registry("101000001"),
+            self.active_record,
+        )
+        self.assertEqual(
             Registry.search_active_registry("COMERCIAL 50% OFERTA_ESPECIAL"),
             record,
         )
@@ -98,13 +106,14 @@ class TestPartnerDgii(TransactionCase):
             Registry.search_active_registry("COMERCIAL 50%"),
             record,
         )
-        self.assertNotIn(record, Registry.search_active_registry("%OFERTA"))
-        self.assertFalse(Registry.search_active_registry("%"))
-        self.assertFalse(Registry.search_active_registry("PORTAL D_MINICANA"))
         self.assertEqual(
-            Registry.search_active_registry("COMERCIAL 50% OFERTA_ESPECIAL"),
+            Registry.search_active_registry("50% OFERTA_ESPECIAL"),
             record,
         )
+        self.assertNotIn(record, Registry.search_active_registry("%OFERTA"))
+        self.assertFalse(Registry.search_active_registry("%"))
+        self.assertFalse(Registry.search_active_registry("PORTAL%"))
+        self.assertFalse(Registry.search_active_registry("PORTAL D_MINICANA"))
 
     def test_search_does_not_create_contact(self):
         before = self.env["res.partner"].search_count([])

@@ -2,7 +2,9 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError
 
 from odoo.addons.korventis_partner_dgii.services.normalization import (
+    contains_like_metacharacters,
     escape_like,
+    is_only_like_metacharacters,
     normalize_identification,
     normalize_name,
 )
@@ -64,6 +66,24 @@ class KorventisDgiiRnc(models.Model):
         if normalized_id.isdigit():
             where = "r.rnc_normalizado LIKE %s" + like_escape
             filter_parameters = [escape_like(normalized_id) + "%"]
+        elif contains_like_metacharacters(normalized_name):
+            # User-entered % and _ are literals. Skip FTS because
+            # plainto_tsquery discards those characters and would match tokens
+            # such as PORTAL or OFERTA.
+            escaped = escape_like(normalized_name)
+            prefix_pattern = escaped + "%"
+            if is_only_like_metacharacters(normalized_name):
+                where = "r.razon_social_normalizada LIKE %s" + like_escape
+                filter_parameters = [prefix_pattern]
+            else:
+                where = (
+                    "(r.razon_social_normalizada LIKE %s"
+                    + like_escape
+                    + " OR r.razon_social_normalizada LIKE %s"
+                    + like_escape
+                    + ")"
+                )
+                filter_parameters = [prefix_pattern, "%" + escaped + "%"]
         else:
             where = (
                 "("

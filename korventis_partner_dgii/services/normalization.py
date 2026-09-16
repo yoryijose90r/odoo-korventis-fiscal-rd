@@ -37,3 +37,12 @@ def escape_like(value):
         .replace("%", "\\%")
         .replace("_", "\\_")
     )
+
+
+def contains_like_metacharacters(value):
+    return any(character in "%_" for character in value or "")
+
+
+def is_only_like_metacharacters(value):
+    text = value or ""
+    return bool(text) and all(character in "%_" for character in text)
