@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_dgii_import_run_list" model="ir.ui.view">
+        <field name="name">korventis.dgii.import.run.list</field>
+        <field name="model">korventis.dgii.import.run</field>
+        <field name="arch" type="xml">
+            <list create="0" edit="0" delete="0"
+                  decoration-success="state in ('success', 'unchanged')"
+                  decoration-danger="state == 'failed'"
+                  decoration-warning="state == 'skipped'">
+                <field name="name"/>
+                <field name="state"/>
+                <field name="started_at"/>
+                <field name="duration_seconds"/>
+                <field name="accepted_count"/>
+                <field name="rejected_count"/>
+                <field name="warning_count"/>
+                <field name="duplicate_count"/>
+                <field name="version_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dgii_import_run_form" model="ir.ui.view">
+        <field name="name">korventis.dgii.import.run.form</field>
+        <field name="model">korventis.dgii.import.run</field>
+        <field name="arch" type="xml">
+            <form create="0" edit="0" delete="0">
+                <header>
+                    <button name="action_open_version" type="object"
+                            string="Abrir versión" class="btn-primary"
+                            invisible="not version_id"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="source_url" widget="url"/>
+                            <field name="started_at"/>
+                            <field name="finished_at"/>
+                            <field name="duration_seconds"/>
+                        </group>
+                        <group>
+                            <field name="total_rows"/>
+                            <field name="accepted_count"/>
+                            <field name="rejected_count"/>
+                            <field name="warning_count"/>
+                            <field name="duplicate_count"/>
+                            <field name="archive_sha256"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="details"/>
+                        <field name="error_message"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_dgii_import_runs" model="ir.actions.act_window">
+        <field name="name">Ejecuciones de importación DGII</field>
+        <field name="res_model">korventis.dgii.import.run</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

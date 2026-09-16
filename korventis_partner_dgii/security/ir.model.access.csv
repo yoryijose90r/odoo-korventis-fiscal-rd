@@ -1,0 +1,11 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_dgii_rnc_user,korventis.dgii.rnc.user,model_korventis_dgii_rnc,group_dgii_user,1,0,0,0
+access_dgii_rnc_invoice,korventis.dgii.rnc.invoice,model_korventis_dgii_rnc,account.group_account_invoice,1,0,0,0
+access_dgii_version_user,korventis.dgii.rnc.version.user,model_korventis_dgii_rnc_version,group_dgii_user,1,0,0,0
+access_dgii_version_invoice,korventis.dgii.rnc.version.invoice,model_korventis_dgii_rnc_version,account.group_account_invoice,1,0,0,0
+access_dgii_run_manager,korventis.dgii.import.run.manager,model_korventis_dgii_import_run,group_dgii_manager,1,0,0,0
+access_partner_lookup_user,korventis.partner.lookup.wizard.user,model_korventis_partner_lookup_wizard,group_dgii_user,1,1,1,1
+access_partner_lookup_invoice,korventis.partner.lookup.wizard.invoice,model_korventis_partner_lookup_wizard,account.group_account_invoice,1,1,1,1
+access_partner_lookup_line_user,korventis.partner.lookup.line.user,model_korventis_partner_lookup_line,group_dgii_user,1,1,1,1
+access_partner_lookup_line_invoice,korventis.partner.lookup.line.invoice,model_korventis_partner_lookup_line,account.group_account_invoice,1,1,1,1
+access_dgii_import_wizard_manager,korventis.dgii.import.wizard.manager,model_korventis_dgii_import_wizard,group_dgii_manager,1,1,1,1

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_korventis_dgii_root"
+              name="Padrón DGII"
+              parent="contacts.menu_contacts"
+              sequence="30"
+              groups="group_dgii_user"/>
+
+    <menuitem id="menu_partner_lookup"
+              name="Buscar o registrar cliente"
+              parent="menu_korventis_dgii_root"
+              action="action_partner_lookup_wizard"
+              sequence="10"
+              groups="group_dgii_user"/>
+
+    <menuitem id="menu_dgii_rnc"
+              name="Contribuyentes"
+              parent="menu_korventis_dgii_root"
+              action="action_dgii_rnc"
+              sequence="20"
+              groups="group_dgii_user"/>
+
+    <menuitem id="menu_dgii_versions"
+              name="Versiones"
+              parent="menu_korventis_dgii_root"
+              action="action_dgii_versions"
+              sequence="30"
+              groups="group_dgii_manager"/>
+
+    <menuitem id="menu_dgii_import_runs"
+              name="Ejecuciones"
+              parent="menu_korventis_dgii_root"
+              action="action_dgii_import_runs"
+              sequence="40"
+              groups="group_dgii_manager"/>
+
+    <menuitem id="menu_dgii_import"
+              name="Importar ahora"
+              parent="menu_korventis_dgii_root"
+              action="action_dgii_import_wizard"
+              sequence="50"
+              groups="group_dgii_manager"/>
+</odoo>

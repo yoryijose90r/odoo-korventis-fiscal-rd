@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_form_korventis_dgii" model="ir.ui.view">
+        <field name="name">res.partner.form.korventis.dgii</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id"
+               ref="korventis_l10n_do_fiscal.view_partner_form_korventis_fiscal"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='korventis_fiscal_document_type_id']"
+                   position="after">
+                <field name="korventis_registration_origin"
+                       invisible="not korventis_registration_origin"/>
+                <field name="korventis_verification_state"
+                       invisible="not korventis_registration_origin"/>
+                <field name="korventis_dgii_status"
+                       invisible="korventis_registration_origin != 'dgii'"/>
+                <field name="korventis_dgii_activity"
+                       invisible="korventis_registration_origin != 'dgii'"/>
+                <field name="korventis_dgii_version_id"
+                       invisible="korventis_registration_origin != 'dgii'"/>
+                <field name="korventis_dgii_lookup_at"
+                       invisible="korventis_registration_origin != 'dgii'"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

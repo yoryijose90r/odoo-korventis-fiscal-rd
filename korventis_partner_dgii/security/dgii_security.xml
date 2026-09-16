@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="module_category_korventis_dgii" model="ir.module.category">
+        <field name="name">Korventis DGII Local</field>
+        <field name="description">Consulta e importación del padrón local DGII</field>
+        <field name="sequence">26</field>
+    </record>
+
+    <record id="group_dgii_user" model="res.groups">
+        <field name="name">Usuario del padrón DGII</field>
+        <field name="category_id" ref="module_category_korventis_dgii"/>
+    </record>
+
+    <record id="group_dgii_manager" model="res.groups">
+        <field name="name">Administrador del padrón DGII</field>
+        <field name="category_id" ref="module_category_korventis_dgii"/>
+        <field name="implied_ids" eval="[(4, ref('group_dgii_user'))]"/>
+    </record>
+</odoo>

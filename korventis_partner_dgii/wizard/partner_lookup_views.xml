@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_lookup_wizard_form" model="ir.ui.view">
+        <field name="name">korventis.partner.lookup.wizard.form</field>
+        <field name="model">korventis.partner.lookup.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Buscar o registrar cliente">
+                <field name="state" invisible="1"/>
+                <field name="registry_available" invisible="1"/>
+
+                <group invisible="state != 'search'">
+                    <field name="query"
+                           placeholder="Nombre, razón social, RNC o cédula"/>
+                    <button name="action_search" type="object"
+                            string="Buscar" class="btn-primary"/>
+                    <div class="alert alert-info" role="alert"
+                         invisible="registry_available">
+                        No existe una versión activa del padrón DGII.
+                        La búsqueda continuará en contactos Odoo y permanece
+                        disponible el registro manual.
+                    </div>
+                    <field name="result_ids" nolabel="1">
+                        <list create="0" edit="0" delete="0">
+                            <field name="source"/>
+                            <field name="name"/>
+                            <field name="identification"/>
+                            <field name="status"/>
+                            <field name="activity" optional="hide"/>
+                            <button name="action_select" type="object"
+                                    string="Seleccionar" class="btn-link"/>
+                        </list>
+                    </field>
+                </group>
+
+                <group invisible="state != 'confirm_dgii'">
+                    <div class="alert alert-warning" role="alert">
+                        Confirme el contribuyente. Su estado DGII se conservará
+                        como información y no constituye autorización para emitir
+                        comprobantes fiscales.
+                    </div>
+                    <field name="selected_registry_id" invisible="1"/>
+                    <field name="selected_registry_name"/>
+                    <field name="selected_registry_rnc"/>
+                    <field name="selected_registry_status"/>
+                    <field name="selected_registry_activity"/>
+                </group>
+
+                <group invisible="state != 'manual'">
+                    <div class="alert alert-info" role="alert">
+                        El registro manual quedará PENDIENTE de verificación.
+                        El tipo fiscal debe seleccionarse explícitamente.
+                    </div>
+                    <field name="manual_name" required="state == 'manual'"/>
+                    <field name="manual_identification" required="state == 'manual'"/>
+                    <field name="manual_fiscal_type_id" required="state == 'manual'"/>
+                </group>
+
+                <footer>
+                    <button name="action_manual" type="object"
+                            string="Registro manual"
+                            invisible="state != 'search'"/>
+                    <button name="action_confirm_dgii" type="object"
+                            string="Confirmar y crear cliente"
+                            class="btn-primary"
+                            invisible="state != 'confirm_dgii'"/>
+                    <button name="action_create_manual" type="object"
+                            string="Crear cliente manual"
+                            class="btn-primary"
+                            invisible="state != 'manual'"/>
+                    <button name="action_back" type="object"
+                            string="Volver"
+                            invisible="state == 'search'"/>
+                    <button string="Cerrar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_lookup_wizard" model="ir.actions.act_window">
+        <field name="name">Buscar o registrar cliente</field>
+        <field name="res_model">korventis.partner.lookup.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="view_dgii_import_wizard_form" model="ir.ui.view">
+        <field name="name">korventis.dgii.import.wizard.form</field>
+        <field name="model">korventis.dgii.import.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Importar padrón DGII">
+                <div class="alert alert-warning" role="alert">
+                    La importación puede tardar varios minutos. La versión activa
+                    no será sustituida hasta validar y activar completamente la nueva.
+                </div>
+                <group>
+                    <field name="source_url" widget="url"/>
+                    <field name="fallback_url" widget="url"/>
+                    <field name="save_for_scheduled_import"/>
+                </group>
+                <footer>
+                    <button name="action_import" type="object"
+                            string="Descargar e importar" class="btn-primary"/>
+                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_dgii_import_wizard" model="ir.actions.act_window">
+        <field name="name">Importar padrón DGII</field>
+        <field name="res_model">korventis.dgii.import.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

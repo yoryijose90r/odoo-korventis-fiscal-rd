@@ -1,0 +1,27 @@
+from odoo import _, models
+from odoo.exceptions import UserError
+
+
+class AccountMove(models.Model):
+    _inherit = "account.move"
+
+    def action_korventis_lookup_partner(self):
+        self.ensure_one()
+        self.env["res.partner"]._korventis_check_lookup_access()
+        if self.state != "draft" or self.korventis_fiscal_document_id:
+            raise UserError(
+                _("La búsqueda de clientes sólo está disponible en facturas borrador.")
+            )
+        wizard = self.env["korventis.partner.lookup.wizard"].create({})
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Buscar o registrar cliente"),
+            "res_model": wizard._name,
+            "res_id": wizard.id,
+            "view_mode": "form",
+            "target": "new",
+            "context": {
+                "active_model": self._name,
+                "active_id": self.id,
+            },
+        }

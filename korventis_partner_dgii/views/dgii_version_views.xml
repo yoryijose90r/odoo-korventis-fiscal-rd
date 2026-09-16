@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_dgii_version_list" model="ir.ui.view">
+        <field name="name">korventis.dgii.rnc.version.list</field>
+        <field name="model">korventis.dgii.rnc.version</field>
+        <field name="arch" type="xml">
+            <list create="0" edit="0" delete="0"
+                  decoration-success="state == 'active'"
+                  decoration-muted="state == 'previous'">
+                <field name="name"/>
+                <field name="state"/>
+                <field name="imported_at"/>
+                <field name="activated_at"/>
+                <field name="record_count"/>
+                <field name="rejected_count"/>
+                <field name="warning_count"/>
+                <field name="archive_sha256" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dgii_version_form" model="ir.ui.view">
+        <field name="name">korventis.dgii.rnc.version.form</field>
+        <field name="model">korventis.dgii.rnc.version</field>
+        <field name="arch" type="xml">
+            <form create="0" edit="0" delete="0">
+                <header>
+                    <button name="action_restore_previous" type="object"
+                            string="Restaurar esta versión"
+                            class="btn-primary"
+                            groups="korventis_partner_dgii.group_dgii_manager"
+                            invisible="state != 'previous'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="source_url" widget="url"/>
+                            <field name="source_filename"/>
+                            <field name="source_last_modified"/>
+                            <field name="source_etag"/>
+                        </group>
+                        <group>
+                            <field name="record_count"/>
+                            <field name="rejected_count"/>
+                            <field name="warning_count"/>
+                            <field name="archive_size"/>
+                            <field name="archive_sha256"/>
+                            <field name="source_attachment_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="imported_at"/>
+                        <field name="activated_at"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_dgii_versions" model="ir.actions.act_window">
+        <field name="name">Versiones del padrón DGII</field>
+        <field name="res_model">korventis.dgii.rnc.version</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
