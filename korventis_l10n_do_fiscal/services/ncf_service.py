@@ -121,8 +121,13 @@ class NcfService:
                 "next_number",
                 "warning_triggered",
                 "warning_triggered_at",
-            ]
+            ],
+            flush=False,
         )
+        # The counter changed through SQL, outside the ORM. Notify the dependency
+        # graph so cached usage metrics and operational_state are recomputed
+        # before evaluating the preventive warning.
+        sequence.modified(["next_number"])
         sequence._korventis_trigger_warning_if_needed()
         _logger.info(
             "korventis fiscal allocated company_id=%s type_id=%s number=%s",
