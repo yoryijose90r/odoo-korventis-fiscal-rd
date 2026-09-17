@@ -37,6 +37,7 @@ class Settings:
     allow_remote: bool
     min_records: int
     max_reject_ratio: float
+    restore_lock_timeout_ms: int
 
     def __repr__(self):
         return (
@@ -78,6 +79,9 @@ class Settings:
             max_reject_ratio = float(
                 os.environ.get("KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO", "0.001")
             )
+            restore_lock_timeout_ms = int(
+                os.environ.get("KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS", "5000")
+            )
         except ValueError:
             raise SystemExit("numeric KORVENTIS_DGII_* settings are invalid")
         return cls(
@@ -95,4 +99,5 @@ class Settings:
             allow_remote=_as_bool(os.environ.get("KORVENTIS_DGII_ALLOW_REMOTE"), False),
             min_records=min_records,
             max_reject_ratio=max_reject_ratio,
+            restore_lock_timeout_ms=restore_lock_timeout_ms,
         )

@@ -8,7 +8,7 @@ import logging
 import sys
 
 from .config import Settings
-from .importer import ImportLimits, import_zip, restore_previous
+from .importer import ImportLimits, RegistryImportError, import_zip, restore_previous
 from .migrate import apply_migrations
 from .server import serve
 
@@ -35,8 +35,17 @@ def _cmd_import(settings, argv):
     parser.add_argument("--url", dest="url", help="Remote URL (disabled unless authorized)")
     parser.add_argument("--source", default="local-zip", help="Origin label stored with the version")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--validate-only", action="store_true", help="Load staging, do not activate")
+    group.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Persist a staging version; do not activate",
+    )
     group.add_argument("--activate", action="store_true", help="Activate if integrity checks pass")
+    group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate ZIP/CSV without persistent writes",
+    )
     args = parser.parse_args(argv)
     if args.url:
         if not settings.allow_remote:
@@ -47,6 +56,7 @@ def _cmd_import(settings, argv):
     if not args.zip_path:
         raise SystemExit("import requires --zip PATH")
     activate = bool(args.activate)
+    persist = not bool(args.dry_run)
     limits = ImportLimits(
         min_records=settings.min_records,
         max_reject_ratio=settings.max_reject_ratio,
@@ -56,6 +66,7 @@ def _cmd_import(settings, argv):
         args.zip_path,
         source_label=args.source,
         activate=activate,
+        persist=persist,
         limits=limits,
     )
     _print_result(result)
@@ -84,8 +95,15 @@ def main(argv=None):
     if command == "import":
         return _cmd_import(settings, rest)
     if command == "restore-previous":
-        version_id = restore_previous(settings)
-        print(json.dumps({"state": "success", "version_id": version_id}))
+        try:
+            version_id = restore_previous(
+                settings.conninfo,
+                lock_timeout_ms=settings.restore_lock_timeout_ms,
+            )
+        except RegistryImportError as exc:
+            print(json.dumps({"state": "failed", "error": str(exc)}, sort_keys=True))
+            return 1
+        print(json.dumps({"state": "success", "version_id": version_id}, sort_keys=True))
         return 0
     raise SystemExit("Unknown command %r (use migrate, serve, import or restore-previous)" % command)
 

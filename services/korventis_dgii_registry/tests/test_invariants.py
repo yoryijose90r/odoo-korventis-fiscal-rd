@@ -37,3 +37,13 @@ def test_hardening_migration_exists():
 def test_importer_migration_exists():
     text = (ROOT / "migrations" / "003_importer.sql").read_text(encoding="utf-8")
     assert "dgii_rnc_version_active_has_records" in text
+    assert "state <> 'active' OR record_count > 0" in text
+
+
+def test_activate_does_not_rewrite_record_count():
+    text = (ROOT / "korventis_dgii_registry" / "importer.py").read_text(encoding="utf-8")
+    assert "SET record_count = %s" not in text
+    assert "row count does not match record_count" in text
+    assert "uncompressed size exceeded during read" in (
+        ROOT / "korventis_dgii_registry" / "archive.py"
+    ).read_text(encoding="utf-8")

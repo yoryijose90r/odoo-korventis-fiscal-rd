@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import pathlib
 import stat
 import zipfile
@@ -23,6 +24,70 @@ class ZipLimits:
 class ZipMember:
     filename: str
     file_size: int
+
+
+class BoundedReader(io.BufferedIOBase):
+    """Count decompressed bytes and abort if the declared ZIP size was a lie."""
+
+    def __init__(self, inner, limit):
+        self._inner = inner
+        self._limit = int(limit)
+        self._seen = 0
+
+    def readable(self):
+        return True
+
+    def seekable(self):
+        seekable = getattr(self._inner, "seekable", None)
+        if seekable:
+            return bool(seekable())
+        return False
+
+    def read(self, size=-1):
+        data = self._inner.read(-1 if size is None else size)
+        self._account(data)
+        return data
+
+    def read1(self, size=-1):
+        read1 = getattr(self._inner, "read1", None)
+        data = read1(size) if read1 else self._inner.read(size)
+        self._account(data)
+        return data
+
+    def readinto(self, buffer):
+        data = self.read(len(buffer))
+        n = len(data)
+        buffer[:n] = data
+        return n
+
+    def readinto1(self, buffer):
+        data = self.read1(len(buffer))
+        n = len(data)
+        buffer[:n] = data
+        return n
+
+    def peek(self, size=0):
+        peek = getattr(self._inner, "peek", None)
+        if peek:
+            return peek(size)
+        return b""
+
+    def _account(self, data):
+        if data:
+            self._seen += len(data)
+            if self._seen > self._limit:
+                raise ArchiveError("uncompressed size exceeded during read")
+
+    def seek(self, pos, whence=io.SEEK_SET):
+        result = self._inner.seek(pos, whence)
+        if whence == io.SEEK_SET:
+            self._seen = int(pos)
+        else:
+            self._seen = int(self._inner.tell())
+        return result
+
+    def tell(self):
+        return self._inner.tell()
 
 
 def _is_unsafe_member(member):

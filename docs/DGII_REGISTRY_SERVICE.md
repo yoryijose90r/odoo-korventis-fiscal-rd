@@ -1,4 +1,4 @@
-# Servicio `korventis-dgii-registry` (Commit 2)
+# Servicio `korventis-dgii-registry` (Commit 2.1)
 
 Esqueleto del padrón DGII independiente más importador local. PostgreSQL
 `korventis_dgii` no vive en las bases Odoo. Este servicio **no** descarga el
@@ -43,12 +43,20 @@ El Registry **no** importa al arrancar. La carga es una orden CLI explícita
 sobre un ZIP local. `--url` está rechazado en este commit.
 
 ```bash
-# Validar ZIP/CSV y dejar la versión en staging (no activa)
+# Validar ZIP/CSV y persistir una versión staging (no activa).
+# --validate-only es el modo persistente: crea dgii_rnc_version + filas.
+# Sin flags el comportamiento es el mismo (staging persistente, no activa).
 python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-qa --validate-only
 
-# Activar solo si pasan ZIP, CSV y umbrales de integridad
+# Comprobar ZIP/CSV sin escrituras persistentes (temp + rollback; no version, no run)
+python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-qa --dry-run
+
+# Activar solo si pasan ZIP, CSV, conteo físico de filas y umbrales de integridad
 python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-qa --activate
 ```
+
+`--validate-only`, `--activate` y `--dry-run` son mutuamente excluyentes.
+`--dry-run` no sustituye a `--validate-only`: no se cambió el modo persistente.
 
 CSV esperado (Latin-1, comas, campos entrecomillados):
 
@@ -63,8 +71,22 @@ Política de filas:
 - Fecha inválida: advertencia; la fila se acepta con fecha nula.
 - `ESTADO` es descriptivo. `ACTIVO` no autoriza emitir e-NCF.
 - Si hay errores críticos o se supera `KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO` (default 0.001), la importación falla y la versión anterior permanece activa.
-- Mismo SHA-256: `unchanged`; no se crea otra versión. Si quedó en `staging`, `--activate` la activa.
-- Dos importaciones a la vez: la segunda recibe `skipped` (candado `pg_try_advisory_lock`).
+- Antes de activar una versión ya persistida en `staging`, el importador compara `count(*)` de `dgii_rnc` con `record_count`. Si no coinciden, o si fallan umbrales (mínimo, duplicados, volumen), se rechaza. **No** se reescribe `record_count` para ocultar el desajuste.
+- `CHECK (state <> 'active' OR record_count > 0)` en `003_importer.sql` solo restringe el metadato `record_count`. No demuestra que existan filas físicas. La existencia real se comprueba en activación y en `/health/ready`.
+- ZIP: límites de tamaño de archivo, tamaño declarado sin comprimir y ratio. Además, durante la lectura se cuenta el número efectivo de bytes descomprimidos y se aborta si supera `max_uncompressed_bytes` (incluso si el metadato ZIP miente).
+- Mismo SHA-256: no se crea otra versión. `--activate` no reactiva historia por accidente; ver la matriz siguiente.
+- Importación y `restore-previous` comparten la misma clave `pg_advisory_*` (`IMPORT_LOCK_KEY`). Importación usa `pg_try_advisory_lock` (si está ocupado: `skipped`, sin cambiar versiones). Restauración usa `pg_advisory_xact_lock` con `lock_timeout` (`KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS`, default 5000 ms). Si hay una importación activa: error controlado `another import is running`, sin alterar versiones.
+
+### SHA-256 ya importado y `--activate`
+
+| Estado actual | `--activate` / `activate=True` | Resultado |
+| --- | --- | --- |
+| `active` | sí o no | `unchanged`. Ya es la versión activa. |
+| `staging` | no (`--validate-only` o default) | `unchanged`. Sigue en staging. |
+| `staging` | sí | Revalida filas físicas vs `record_count` y umbrales; si pasan, activa atómicamente. Si fallan: `failed`, staging intacto, `active` previa intacta. |
+| `previous` | sí o no | `unchanged`. **No** se reactiva. Hace falta `restore-previous`. |
+
+`restore-previous` es la única operación explícita de reactivación histórica: valida conteo físico, toma el candado de importación con timeout, e intercambia `active`/`previous` en una transacción.
 
 ### Respaldo antes de una carga real (futura)
 
@@ -84,10 +106,13 @@ python -m korventis_dgii_registry restore-previous
 ```
 
 Intercambia la `active` actual con la `previous` más reciente en una transacción.
-No hace `DROP` ni borra filas históricas.
+No hace `DROP` ni borra filas históricas. Si el candado de importación está
+tomado, espera como máximo `KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS` y falla
+sin cambiar estados.
 
-No reescriba `001_initial.sql` ni `002_hardening.sql`. El importador añade
-`003_importer.sql` (una versión `active` no puede tener `record_count` 0).
+No reescriba `001_initial.sql`, `002_hardening.sql` ni `003_importer.sql`.
+`003` añade `CHECK (state <> 'active' OR record_count > 0)`: metadato, no
+conteo físico. No se añadió `004` en este commit.
 
 ## Instalación en un entorno desechable de QA
 
@@ -157,9 +182,10 @@ docker compose -f docker-compose.local.yml -p korventis-dgii-disposable up -d re
 curl -sS http://127.0.0.1:8080/health/ready
 ```
 
-No reescriba `001_initial.sql` en instalaciones que ya lo aplicaron. El
-endurecimiento de RNC está en `002_hardening.sql`. La activación no vacía está
-en `003_importer.sql`.
+No reescriba migraciones ya publicadas (`001`, `002`, `003`). El
+endurecimiento de RNC está en `002_hardening.sql`. `003_importer.sql` impide
+`state = 'active'` con `record_count` 0 (metadato). El conteo físico de filas
+se revalida al activar y en readiness.
 
 ## Parada (conserva datos del servicio)
 
@@ -211,6 +237,7 @@ destruyen al terminar. No cargan el padrón oficial.
 | `KORVENTIS_DGII_ALLOW_REMOTE` | Debe permanecer en false. `--url` está deshabilitado. |
 | `KORVENTIS_DGII_IMPORT_MIN_RECORDS` | Mínimo de filas aceptadas (default 1; subir antes de una carga oficial). |
 | `KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO` | Tope de rechazos / total (default 0.001). |
+| `KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS` | Espera máxima del candado en `restore-previous` (default 5000). |
 
 PostgreSQL no tiene `ports:` hacia el host. El API escucha `127.0.0.1` en el
 host y `0.0.0.0:8080` solo dentro del contenedor.

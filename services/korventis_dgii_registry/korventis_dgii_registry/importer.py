@@ -12,7 +12,9 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .archive import ArchiveError, ZipLimits, inspect_zip
+from psycopg.errors import LockNotAvailable, QueryCanceled
+
+from .archive import ArchiveError, BoundedReader, ZipLimits, inspect_zip
 from .migrate import connect
 from .normalize import has_unsafe_control_characters, normalize_header, normalize_name
 
@@ -20,6 +22,7 @@ from .normalize import has_unsafe_control_characters, normalize_header, normaliz
 _logger = logging.getLogger(__name__)
 
 IMPORT_LOCK_KEY = 1262760520
+RESTORE_LOCK_TIMEOUT_MS = 5000
 MAX_LOGGED_ISSUES = 50
 COPY_BATCH_SIZE = 500
 
@@ -76,6 +79,7 @@ def import_zip(
     zip_path,
     source_label="local-zip",
     activate=False,
+    persist=True,
     limits=None,
     fail_at=None,
 ):
@@ -94,7 +98,13 @@ def import_zip(
             return ImportResult(state="skipped", error="another import is running")
         conn.commit()
         return _import_locked(
-            conn, path, source_label, activate, limits, fail_at=fail_at
+            conn,
+            path,
+            source_label,
+            activate,
+            persist,
+            limits,
+            fail_at=fail_at,
         )
     except Exception:
         conn.rollback()
@@ -114,12 +124,19 @@ def import_zip(
         conn.close()
 
 
-def restore_previous(conninfo):
+def restore_previous(conninfo, lock_timeout_ms=RESTORE_LOCK_TIMEOUT_MS):
+    timeout_ms = max(1, int(lock_timeout_ms))
     conn = connect(conninfo)
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_xact_lock(%s)", (IMPORT_LOCK_KEY,))
+            ms = max(1, int(timeout_ms))
+            cur.execute("SET LOCAL lock_timeout = %s" % ms)
+            cur.execute("SET LOCAL statement_timeout = %s" % ms)
+            try:
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (IMPORT_LOCK_KEY,))
+            except (LockNotAvailable, QueryCanceled) as exc:
+                raise RegistryImportError("another import is running") from exc
             cur.execute(
                 """
                 SELECT id FROM dgii_rnc_version
@@ -132,7 +149,7 @@ def restore_previous(conninfo):
                 raise RegistryImportError("restore requires exactly one active version")
             cur.execute(
                 """
-                SELECT id FROM dgii_rnc_version
+                SELECT id, record_count FROM dgii_rnc_version
                  WHERE state = 'previous'
                  ORDER BY activated_at DESC NULLS LAST, imported_at DESC, id DESC
                  LIMIT 1
@@ -142,6 +159,13 @@ def restore_previous(conninfo):
             previous = cur.fetchone()
             if not previous:
                 raise RegistryImportError("no previous version to restore")
+            cur.execute(
+                "SELECT count(*) FROM dgii_rnc WHERE version_id = %s",
+                (previous[0],),
+            )
+            actual = int(cur.fetchone()[0])
+            if actual <= 0 or actual != int(previous[1]):
+                raise RegistryImportError("previous version failed integrity checks")
             cur.execute(
                 """
                 UPDATE dgii_rnc_version
@@ -156,12 +180,16 @@ def restore_previous(conninfo):
                    SET state = 'active',
                        activated_at = now()
                  WHERE id = %s
+                   AND state = 'previous'
                    AND record_count > 0
                 """,
                 (previous[0],),
             )
             if cur.rowcount != 1:
                 raise RegistryImportError("previous version cannot be activated")
+            cur.execute("SELECT count(*) FROM dgii_rnc_version WHERE state = 'active'")
+            if int(cur.fetchone()[0]) != 1:
+                raise RegistryImportError("restore would leave an invalid active set")
         conn.commit()
         return previous[0]
     except Exception:
@@ -171,16 +199,30 @@ def restore_previous(conninfo):
         conn.close()
 
 
-def _import_locked(conn, path, source_label, activate, limits, fail_at=None):
+def _import_locked(conn, path, source_label, activate, persist, limits, fail_at=None):
     started = datetime.datetime.now(datetime.timezone.utc)
     run_id = None
     try:
-        run_id = _insert_run(conn, source_label, started)
         member = inspect_zip(path, limits.zip)
         archive_hash = sha256_file(path)
         existing = _version_by_sha(conn, archive_hash)
-        if existing:
-            return _reuse_existing(conn, run_id, existing, archive_hash, activate)
+        if persist:
+            run_id = _insert_run(conn, source_label, started)
+            if existing:
+                return _reuse_existing(
+                    conn, run_id, existing, archive_hash, activate, limits
+                )
+        elif existing:
+            return ImportResult(
+                state="unchanged",
+                version_id=existing["id"],
+                archive_sha256=archive_hash,
+                total_rows=existing["record_count"],
+                accepted_count=existing["record_count"],
+                rejected_count=existing["rejected_count"],
+                warning_count=existing["warning_count"],
+                details=_sha_reuse_details(existing["state"], activate, persist=False),
+            )
         stats = {
             "total_rows": 0,
             "accepted": 0,
@@ -191,8 +233,20 @@ def _import_locked(conn, path, source_label, activate, limits, fail_at=None):
         imported_at = datetime.datetime.now(datetime.timezone.utc)
         with conn.cursor() as cur:
             _create_stage(cur)
-            _stream_csv(cur, path, member.filename, imported_at, stats)
+            _stream_csv(cur, path, member.filename, imported_at, stats, limits.zip)
             _validate_stage(cur, stats, limits)
+            if not persist:
+                conn.rollback()
+                return ImportResult(
+                    state="success",
+                    archive_sha256=archive_hash,
+                    total_rows=stats["total_rows"],
+                    accepted_count=stats["accepted"],
+                    rejected_count=stats["rejected"],
+                    warning_count=stats["warnings"],
+                    duplicate_count=stats.get("duplicates", 0),
+                    details="dry-run: ZIP and CSV validated; no persistent writes",
+                )
             version_id = _insert_version(
                 cur,
                 source_label,
@@ -206,7 +260,7 @@ def _import_locked(conn, path, source_label, activate, limits, fail_at=None):
             if fail_at == "before_activate":
                 raise RegistryImportError("injected failure before activation")
             if activate:
-                _activate(cur, version_id)
+                _activate(cur, version_id, limits)
                 if fail_at == "during_activate":
                     raise RegistryImportError("injected failure during activation")
         result = ImportResult(
@@ -233,9 +287,9 @@ def _import_locked(conn, path, source_label, activate, limits, fail_at=None):
             except Exception:
                 conn.rollback()
         return result
-    except Exception:
+    except Exception as exc:
         conn.rollback()
-        _logger.error("import failed (%s)", "unexpected")
+        _logger.error("import failed (%s)", type(exc).__name__)
         result = ImportResult(state="failed", error="import failed")
         if run_id:
             try:
@@ -254,10 +308,27 @@ def _safe_error(exc):
     return str(exc)[:300]
 
 
-def _reuse_existing(conn, run_id, existing, archive_hash, activate):
-    if activate and existing["state"] == "staging" and existing["record_count"] > 0:
+def _sha_reuse_details(state, activate, persist=True):
+    prefix = "dry-run: " if not persist else ""
+    if state == "active":
+        return prefix + "archive SHA-256 is already the active version"
+    if state == "staging":
+        if activate and persist:
+            return "activated previously staged archive SHA-256"
+        return prefix + "archive SHA-256 already staged; not activated"
+    if state == "previous":
+        return (
+            prefix
+            + "archive SHA-256 is a previous version; "
+            "use restore-previous to reactivate"
+        )
+    return prefix + "archive SHA-256 already imported"
+
+
+def _reuse_existing(conn, run_id, existing, archive_hash, activate, limits):
+    if activate and existing["state"] == "staging":
         with conn.cursor() as cur:
-            _activate(cur, existing["id"])
+            _activate(cur, existing["id"], limits)
         result = ImportResult(
             state="success",
             version_id=existing["id"],
@@ -266,7 +337,7 @@ def _reuse_existing(conn, run_id, existing, archive_hash, activate):
             accepted_count=existing["record_count"],
             rejected_count=existing["rejected_count"],
             warning_count=existing["warning_count"],
-            details="activated previously staged archive SHA-256",
+            details=_sha_reuse_details("staging", True),
         )
         _finish_run(conn, run_id, result, existing["id"])
         conn.commit()
@@ -279,7 +350,7 @@ def _reuse_existing(conn, run_id, existing, archive_hash, activate):
         accepted_count=existing["record_count"],
         rejected_count=existing["rejected_count"],
         warning_count=existing["warning_count"],
-        details="archive SHA-256 already imported",
+        details=_sha_reuse_details(existing["state"], activate),
     )
     _finish_run(conn, run_id, result, existing["id"])
     conn.commit()
@@ -387,10 +458,12 @@ def _open_csv_text(binary):
     return io.TextIOWrapper(binary, encoding="latin-1", errors="strict", newline="")
 
 
-def _stream_csv(cur, path, member_name, imported_at, stats):
+def _stream_csv(cur, path, member_name, imported_at, stats, zip_limits=None):
+    zip_limits = zip_limits or ZipLimits()
     batch = []
     with zipfile.ZipFile(path) as archive, archive.open(member_name) as binary:
-        with _open_csv_text(binary) as text:
+        bounded = BoundedReader(binary, zip_limits.max_uncompressed_bytes)
+        with _open_csv_text(bounded) as text:
             reader = csv.reader(text, dialect="excel", strict=True)
             try:
                 header = next(reader)
@@ -572,24 +645,58 @@ def _copy_stage_to_version(cur, version_id, expected):
         raise RegistryImportError("copy from staging was incomplete")
 
 
-def _activate(cur, version_id):
+def _activate(cur, version_id, limits=None):
+    limits = limits or ImportLimits()
     cur.execute(
         """
-        SELECT count(*) FROM dgii_rnc WHERE version_id = %s
+        SELECT state, record_count
+          FROM dgii_rnc_version
+         WHERE id = %s
+         FOR UPDATE
         """,
         (version_id,),
     )
-    rows = int(cur.fetchone()[0])
-    if rows <= 0:
-        raise RegistryImportError("refusing to activate an empty version")
+    row = cur.fetchone()
+    if not row:
+        raise RegistryImportError("version not found")
+    if row[0] != "staging":
+        raise RegistryImportError("only a staging version can be activated")
+    recorded = int(row[1])
+    cur.execute(
+        "SELECT count(*) FROM dgii_rnc WHERE version_id = %s",
+        (version_id,),
+    )
+    actual = int(cur.fetchone()[0])
+    if actual != recorded:
+        raise RegistryImportError(
+            "staged version row count does not match record_count"
+        )
+    if actual <= 0 or actual < limits.min_records:
+        raise RegistryImportError("staged version does not meet integrity thresholds")
     cur.execute(
         """
-        UPDATE dgii_rnc_version
-           SET record_count = %s
-         WHERE id = %s AND state = 'staging'
+        SELECT count(*) - count(DISTINCT rnc_normalizado)
+          FROM dgii_rnc
+         WHERE version_id = %s
         """,
-        (rows, version_id),
+        (version_id,),
     )
+    if int(cur.fetchone()[0]):
+        raise RegistryImportError("staged version contains duplicate normalized RNCs")
+    cur.execute(
+        """
+        SELECT id, record_count
+          FROM dgii_rnc_version
+         WHERE state = 'active'
+           AND id <> %s
+        """,
+        (version_id,),
+    )
+    active = cur.fetchone()
+    if active and active[1] >= limits.volume_ratio_floor:
+        ratio = actual / float(active[1])
+        if not limits.volume_ratio_min <= ratio <= limits.volume_ratio_max:
+            raise RegistryImportError("volume differs too much from the active version")
     cur.execute(
         """
         UPDATE dgii_rnc_version
