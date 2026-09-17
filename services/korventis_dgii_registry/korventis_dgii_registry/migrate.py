@@ -16,7 +16,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # Session/transaction advisory lock for schema changes. int4-safe.
 MIGRATION_LOCK_KEY = 1262760519
 
-REQUIRED_MIGRATIONS = ("001_initial", "002_hardening")
+REQUIRED_MIGRATIONS = ("001_initial", "002_hardening", "003_importer")
 
 
 def migration_files():
@@ -108,15 +108,18 @@ def schema_status(target):
             missing = [name for name in REQUIRED_MIGRATIONS if name not in versions]
             cur.execute("SELECT to_regclass('public.dgii_rnc_version')")
             has_registry = cur.fetchone()[0] is not None
-            active = 0
+            active_rows = []
             auto_import = "false"
             if has_registry:
                 cur.execute(
                     """
-                    SELECT count(*) FROM dgii_rnc_version WHERE state = 'active'
+                    SELECT v.id, v.record_count,
+                           (SELECT count(*) FROM dgii_rnc r WHERE r.version_id = v.id)
+                      FROM dgii_rnc_version v
+                     WHERE v.state = 'active'
                     """
                 )
-                active = int(cur.fetchone()[0])
+                active_rows = cur.fetchall()
                 cur.execute(
                     """
                     SELECT value FROM dgii_service_settings
@@ -128,10 +131,20 @@ def schema_status(target):
             schema_ok = not missing and has_registry
             if not schema_ok:
                 registry = "unavailable"
-            elif active:
-                registry = "active"
-            else:
+                active = 0
+            elif len(active_rows) == 0:
                 registry = "pending"
+                active = 0
+            elif (
+                len(active_rows) == 1
+                and int(active_rows[0][1]) > 0
+                and int(active_rows[0][1]) == int(active_rows[0][2])
+            ):
+                registry = "active"
+                active = 1
+            else:
+                registry = "unavailable"
+                active = len(active_rows)
     return {
         "schema": schema_ok,
         "migrations": versions,
@@ -157,6 +170,13 @@ def probe_readiness(target):
             "status": "unready",
             "postgres": True,
             "schema": False,
+            "registry": "unavailable",
+        }
+    if status["registry"] == "unavailable":
+        return {
+            "status": "unready",
+            "postgres": True,
+            "schema": True,
             "registry": "unavailable",
         }
     return {

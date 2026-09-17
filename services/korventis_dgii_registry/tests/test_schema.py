@@ -17,10 +17,10 @@ def test_apply_migrations_is_idempotent(db_conninfo):
     fresh = recreate_database(db_conninfo, "korventis_dgii_fresh")
     first = apply_migrations(fresh)
     second = apply_migrations(fresh)
-    assert first == ["001_initial", "002_hardening"]
+    assert first == ["001_initial", "002_hardening", "003_importer"]
     assert second == []
     status = schema_status(fresh)
-    assert status["migrations"] == ["001_initial", "002_hardening"]
+    assert status["migrations"] == ["001_initial", "002_hardening", "003_importer"]
     assert status["schema"] is True
     assert status["registry"] == "pending"
     assert status["active_versions"] == 0
@@ -40,10 +40,10 @@ def test_one_active_version_unique_index(db_conninfo):
             cur.execute(
                 """
                 INSERT INTO dgii_rnc_version (
-                    name, state, source_url, source_filename, archive_sha256, imported_at
+                    name, state, source_url, source_filename, archive_sha256, imported_at, record_count
                 ) VALUES (
                     'fixture-a', 'active', 'https://example.invalid/a.zip', 'a.zip',
-                    %s, now()
+                    %s, now(), 1
                 )
                 """,
                 (_sha("a"),),
@@ -53,10 +53,10 @@ def test_one_active_version_unique_index(db_conninfo):
                 cur.execute(
                     """
                     INSERT INTO dgii_rnc_version (
-                        name, state, source_url, source_filename, archive_sha256, imported_at
+                        name, state, source_url, source_filename, archive_sha256, imported_at, record_count
                     ) VALUES (
                         'fixture-b', 'active', 'https://example.invalid/b.zip', 'b.zip',
-                        %s, now()
+                        %s, now(), 1
                     )
                     """,
                     (_sha("b"),),

@@ -29,17 +29,17 @@ def test_concurrent_apply_migrations(db_conninfo):
         results = list(pool.map(lambda _: worker(), range(2)))
     combined = [tuple(item) for item in results]
     assert set(combined) <= {
-        ("001_initial", "002_hardening"),
+        ("001_initial", "002_hardening", "003_importer"),
         tuple(),
     }
-    assert ("001_initial", "002_hardening") in combined
+    assert ("001_initial", "002_hardening", "003_importer") in combined
     status = schema_status(fresh)
-    assert status["migrations"] == ["001_initial", "002_hardening"]
+    assert status["migrations"] == ["001_initial", "002_hardening", "003_importer"]
     with connect(fresh) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT version, count(*) FROM schema_migrations GROUP BY version")
             counts = {row[0]: int(row[1]) for row in cur.fetchall()}
-    assert counts == {"001_initial": 1, "002_hardening": 1}
+    assert counts == {"001_initial": 1, "002_hardening": 1, "003_importer": 1}
 
 
 def test_password_with_special_characters():
@@ -87,7 +87,7 @@ def test_password_with_special_characters():
             with connect(conninfo) as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT count(*) FROM schema_migrations")
-                    return cur.fetchone()[0] == 2
+                    return cur.fetchone()[0] == 3
         except Exception:  # noqa: BLE001
             return False
         finally:

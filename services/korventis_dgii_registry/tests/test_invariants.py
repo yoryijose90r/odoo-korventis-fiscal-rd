@@ -32,3 +32,8 @@ def test_hardening_migration_exists():
     text = path.read_text(encoding="utf-8")
     assert "dgii_rnc_version_rnc_normalizado_uidx" in text
     assert "dgii_rnc_rnc_not_blank" in text
+
+
+def test_importer_migration_exists():
+    text = (ROOT / "migrations" / "003_importer.sql").read_text(encoding="utf-8")
+    assert "dgii_rnc_version_active_has_records" in text

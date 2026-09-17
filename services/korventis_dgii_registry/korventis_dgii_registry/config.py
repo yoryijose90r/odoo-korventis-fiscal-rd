@@ -34,6 +34,9 @@ class Settings:
     mode: str
     auto_import: bool
     log_level: str
+    allow_remote: bool
+    min_records: int
+    max_reject_ratio: float
 
     def __repr__(self):
         return (
@@ -71,8 +74,12 @@ class Settings:
         try:
             port = int(os.environ.get("KORVENTIS_DGII_PORT", "8080"))
             pgport = int(os.environ.get("KORVENTIS_DGII_PGPORT", "5432"))
+            min_records = int(os.environ.get("KORVENTIS_DGII_IMPORT_MIN_RECORDS", "1"))
+            max_reject_ratio = float(
+                os.environ.get("KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO", "0.001")
+            )
         except ValueError:
-            raise SystemExit("KORVENTIS_DGII_PORT and KORVENTIS_DGII_PGPORT must be integers")
+            raise SystemExit("numeric KORVENTIS_DGII_* settings are invalid")
         return cls(
             pghost=_require("KORVENTIS_DGII_PGHOST"),
             pgport=pgport,
@@ -85,4 +92,7 @@ class Settings:
             auto_import=_as_bool(os.environ.get("KORVENTIS_DGII_AUTO_IMPORT"), False),
             log_level=os.environ.get("KORVENTIS_DGII_LOG_LEVEL", "INFO").strip()
             or "INFO",
+            allow_remote=_as_bool(os.environ.get("KORVENTIS_DGII_ALLOW_REMOTE"), False),
+            min_records=min_records,
+            max_reject_ratio=max_reject_ratio,
         )
