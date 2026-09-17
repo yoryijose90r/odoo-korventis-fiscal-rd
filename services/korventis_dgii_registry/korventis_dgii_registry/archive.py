@@ -26,12 +26,16 @@ class ZipMember:
     file_size: int
 
 
+BOUNDED_READ_CHUNK = 64 * 1024
+
+
 class BoundedReader(io.BufferedIOBase):
     """Count decompressed bytes and abort if the declared ZIP size was a lie."""
 
-    def __init__(self, inner, limit):
+    def __init__(self, inner, limit, chunk_size=BOUNDED_READ_CHUNK):
         self._inner = inner
         self._limit = int(limit)
+        self._chunk = max(1, int(chunk_size))
         self._seen = 0
 
     def readable(self):
@@ -43,19 +47,52 @@ class BoundedReader(io.BufferedIOBase):
             return bool(seekable())
         return False
 
-    def read(self, size=-1):
-        data = self._inner.read(-1 if size is None else size)
+    def _budget(self):
+        remaining = self._limit - self._seen
+        if remaining < 0:
+            raise ArchiveError("uncompressed size exceeded during read")
+        return remaining + 1
+
+    def _want(self, size):
+        budget = self._budget()
+        if size is None or size < 0:
+            return min(self._chunk, budget)
+        return min(int(size), self._chunk, budget)
+
+    def _pull(self, size):
+        want = self._want(size)
+        data = self._inner.read(want)
+        if len(data) > want:
+            data = data[:want]
         self._account(data)
         return data
 
+    def read(self, size=-1):
+        if size == 0:
+            return b""
+        if size is None or size < 0:
+            chunks = []
+            while True:
+                piece = self._pull(-1)
+                if not piece:
+                    break
+                chunks.append(piece)
+            return b"".join(chunks)
+        return self._pull(size)
+
     def read1(self, size=-1):
+        if size == 0:
+            return b""
+        want = self._want(-1 if size is None or size < 0 else size)
         read1 = getattr(self._inner, "read1", None)
-        data = read1(size) if read1 else self._inner.read(size)
+        data = read1(want) if read1 else self._inner.read(want)
+        if len(data) > want:
+            data = data[:want]
         self._account(data)
         return data
 
     def readinto(self, buffer):
-        data = self.read(len(buffer))
+        data = self._pull(len(buffer))
         n = len(data)
         buffer[:n] = data
         return n
@@ -68,9 +105,19 @@ class BoundedReader(io.BufferedIOBase):
 
     def peek(self, size=0):
         peek = getattr(self._inner, "peek", None)
-        if peek:
-            return peek(size)
-        return b""
+        if not peek:
+            return b""
+        remaining = self._limit - self._seen
+        if remaining <= 0:
+            return b""
+        if size is None or size < 0 or size == 0:
+            want = min(self._chunk, remaining)
+        else:
+            want = min(int(size), self._chunk, remaining)
+        data = peek(want)
+        if len(data) > want:
+            data = data[:want]
+        return data
 
     def _account(self, data):
         if data:

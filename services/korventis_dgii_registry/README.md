@@ -5,8 +5,9 @@ importer: shared import/restore lock with timeout, SHA-256 state matrix,
 staging row-count integrity, bounded decompressed reads, and `--dry-run`.
 
 `--validate-only` (and the default without flags) still persists a staging
-version. `--dry-run` validates without persistent writes. `previous` SHA-256
-is not reactivated by `--activate`; use `restore-previous`.
+version. `--dry-run` always revalidates ZIP/CSV (even if the SHA-256 already
+exists) without persistent writes. `previous` SHA-256 is not reactivated by
+`--activate`; use `restore-previous`.
 
 It does not download the official ZIP on boot, does not copy Odoo databases,
 and does not write `res.partner`.

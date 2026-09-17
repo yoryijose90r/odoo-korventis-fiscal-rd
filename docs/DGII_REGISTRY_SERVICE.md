@@ -48,7 +48,8 @@ sobre un ZIP local. `--url` está rechazado en este commit.
 # Sin flags el comportamiento es el mismo (staging persistente, no activa).
 python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-qa --validate-only
 
-# Comprobar ZIP/CSV sin escrituras persistentes (temp + rollback; no version, no run)
+# Comprobar ZIP/CSV sin escrituras persistentes (temp + rollback; no version, no run).
+# Siempre revalida el archivo, incluso si el SHA-256 ya está registrado.
 python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-qa --dry-run
 
 # Activar solo si pasan ZIP, CSV, conteo físico de filas y umbrales de integridad
@@ -57,6 +58,8 @@ python -m korventis_dgii_registry import --zip /ruta/padron.zip --source local-q
 
 `--validate-only`, `--activate` y `--dry-run` son mutuamente excluyentes.
 `--dry-run` no sustituye a `--validate-only`: no se cambió el modo persistente.
+Un `--dry-run` de un SHA ya importado no devuelve `unchanged` por atajo: vuelve a
+validar ZIP/CSV y umbrales, y no escribe tablas persistentes.
 
 CSV esperado (Latin-1, comas, campos entrecomillados):
 

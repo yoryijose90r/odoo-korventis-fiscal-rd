@@ -212,17 +212,6 @@ def _import_locked(conn, path, source_label, activate, persist, limits, fail_at=
                 return _reuse_existing(
                     conn, run_id, existing, archive_hash, activate, limits
                 )
-        elif existing:
-            return ImportResult(
-                state="unchanged",
-                version_id=existing["id"],
-                archive_sha256=archive_hash,
-                total_rows=existing["record_count"],
-                accepted_count=existing["record_count"],
-                rejected_count=existing["rejected_count"],
-                warning_count=existing["warning_count"],
-                details=_sha_reuse_details(existing["state"], activate, persist=False),
-            )
         stats = {
             "total_rows": 0,
             "accepted": 0,

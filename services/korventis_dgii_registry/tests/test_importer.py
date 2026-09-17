@@ -394,6 +394,49 @@ def test_dry_run_does_not_persist(db_conninfo, tmp_path):
     assert _count(db_conninfo, "SELECT count(*) FROM dgii_import_run") == 0
 
 
+def test_dry_run_revalidates_existing_sha_without_writes(db_conninfo, tmp_path):
+    path = write_zip(tmp_path / "again.zip", csv_bytes(valid_rows()))
+    imported = import_zip(db_conninfo, path, activate=True)
+    assert imported.state == "success"
+    versions = _count(db_conninfo, "SELECT count(*) FROM dgii_rnc_version")
+    rows = _count(db_conninfo, "SELECT count(*) FROM dgii_rnc")
+    runs = _count(db_conninfo, "SELECT count(*) FROM dgii_import_run")
+    active_id = _count(db_conninfo, "SELECT id FROM dgii_rnc_version WHERE state = 'active'")
+    recorded = _count(
+        db_conninfo,
+        "SELECT record_count FROM dgii_rnc_version WHERE id = %s",
+        (active_id,),
+    )
+    dry = import_zip(db_conninfo, path, persist=False)
+    assert dry.state == "success"
+    assert dry.accepted_count == 3
+    assert dry.total_rows == 3
+    assert "ZIP and CSV validated" in dry.details
+    assert "already the active version" not in dry.details
+    assert dry.version_id is None
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_rnc_version") == versions
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_rnc") == rows
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_import_run") == runs
+    assert _count(db_conninfo, "SELECT id FROM dgii_rnc_version WHERE state = 'active'") == active_id
+    assert _count(
+        db_conninfo,
+        "SELECT record_count FROM dgii_rnc_version WHERE id = %s",
+        (active_id,),
+    ) == recorded
+    refused = import_zip(
+        db_conninfo,
+        path,
+        persist=False,
+        limits=ImportLimits(min_records=1000),
+    )
+    assert refused.state == "failed"
+    assert "integrity" in refused.error
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_rnc_version") == versions
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_rnc") == rows
+    assert _count(db_conninfo, "SELECT count(*) FROM dgii_import_run") == runs
+    assert _count(db_conninfo, "SELECT id FROM dgii_rnc_version WHERE state = 'active'") == active_id
+
+
 def test_restore_times_out_when_import_lock_is_held(db_conninfo, tmp_path):
     first_zip = write_zip(tmp_path / "r1.zip", csv_bytes(valid_rows()))
     first = import_zip(db_conninfo, first_zip, activate=True)
