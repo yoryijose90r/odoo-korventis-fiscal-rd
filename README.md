@@ -6,6 +6,7 @@ Arquitectura prevista:
 
 * `korventis_l10n_do_fiscal` — núcleo (tipos, e-NCF, auditoría). Versión `18.0.1.3.1`.
 * `korventis_partner_dgii` — padrón local y asistente de clientes. Versión `18.0.1.1.0`.
+* `korventis-dgii-registry` — servicio independiente del padrón (esqueleto Commit 1; véase `docs/DGII_REGISTRY_SERVICE.md`).
 * `korventis_l10n_do_pos` — no existe aún; véase `docs/POS_GAP_ANALYSIS.md`.
 * `korventis_l10n_do_ecf` / `korventis_l10n_do_reports` — no iniciados.
 
@@ -29,6 +30,8 @@ Documentación:
 * `docs/CONFIGURATION.md` — parámetros
 * `docs/ROLLBACK.md` — recuperación
 * `docs/QA_CHECKLIST.md` — aceptación
+* `docs/DGII_SHARED_ARCHITECTURE.md` — diseño SHARED/LOCAL
+* `docs/DGII_REGISTRY_SERVICE.md` — instalar, actualizar y destruir el servicio de padrón
 * `docs/POS_GAP_ANALYSIS.md` — brecha POS
 
 Instalador: `scripts/install_korventis.sh`. Verificador: `scripts/verify_korventis.sh`.

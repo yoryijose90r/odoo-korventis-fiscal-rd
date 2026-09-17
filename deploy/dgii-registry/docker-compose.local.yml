@@ -1,0 +1,56 @@
+name: korventis-dgii-local
+
+# LOCAL deploy of the same korventis-dgii-registry image.
+# PostgreSQL is internal only. API is bound to loopback.
+# Does not download the official DGII ZIP. Does not touch Odoo databases.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: korventis_dgii
+      POSTGRES_USER: korventis_dgii
+      POSTGRES_PASSWORD: ${KORVENTIS_DGII_POSTGRES_PASSWORD:?Set KORVENTIS_DGII_POSTGRES_PASSWORD in .env}
+    volumes:
+      - korventis_dgii_local_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U korventis_dgii -d korventis_dgii"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    read_only: false
+
+  registry:
+    build:
+      context: ../../services/korventis_dgii_registry
+      dockerfile: ../../deploy/dgii-registry/Dockerfile
+    image: korventis-dgii-registry:18.0.2.0
+    environment:
+      KORVENTIS_DGII_DATABASE_URL: postgresql://korventis_dgii:${KORVENTIS_DGII_POSTGRES_PASSWORD}@postgres:5432/korventis_dgii
+      KORVENTIS_DGII_BIND: 0.0.0.0
+      KORVENTIS_DGII_PORT: "8080"
+      KORVENTIS_DGII_MODE: local
+      KORVENTIS_DGII_AUTO_IMPORT: "false"
+      KORVENTIS_DGII_LOG_LEVEL: ${KORVENTIS_DGII_LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${KORVENTIS_DGII_PUBLISH_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  korventis_dgii_local_pgdata:

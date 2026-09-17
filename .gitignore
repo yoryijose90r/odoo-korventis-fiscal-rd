@@ -44,6 +44,7 @@ odoo.conf
 *.dump
 *.sql
 !*.sql.example
+!services/**/migrations/*.sql
 sessions/
 addons/data_dir/
 
