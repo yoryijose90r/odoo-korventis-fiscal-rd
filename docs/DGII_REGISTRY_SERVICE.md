@@ -1,4 +1,4 @@
-# Servicio `korventis-dgii-registry` (Commit 2.1)
+# Servicio `korventis-dgii-registry` (Commit 2.3)
 
 Esqueleto del padrón DGII independiente más importador local. PostgreSQL
 `korventis_dgii` no vive en las bases Odoo. Este servicio **no** descarga el
@@ -7,7 +7,12 @@ activa cron y **no** cambia emisión fiscal, POS ni e-NCF.
 
 Imagen única: `korventis-dgii-registry:18.0.2.0`.
 Modalidades: `docker-compose.shared.yml` (SHARED) y `docker-compose.local.yml`
-(LOCAL). Solo cambia el modo y el volumen de datos.
+(LOCAL). Solo cambia el modo, el volumen de datos y si el mínimo de importación
+es obligatorio.
+
+El procedimiento **probado en QA** (health, dry-run, validate-only, dumps) está
+en `docs/DGII_REGISTRY_QA_RUNBOOK.md`. Este archivo cubre política e
+instalación genérica. El runbook no autoriza `--activate` ni producción.
 
 ## Qué queda fuera
 
@@ -133,6 +138,15 @@ cp env.example .env
 Edite `.env` y ponga una contraseña local (nunca la suba a git). Puede
 incluir `@ # / : % ? &`. Evite `$` porque Compose lo interpola.
 
+Para `docker-compose.shared.yml`, `KORVENTIS_DGII_IMPORT_MIN_RECORDS` es
+**obligatorio** (Compose falla si falta). Un `.env` con la variable no basta
+si el servicio Registry no la declara en `environment`: debe constar en el
+YAML versionado. LOCAL admite omitirla y usa `1` (solo fixtures ficticios).
+
+Espere a que el contenedor Registry esté `healthy` antes de consultar
+`/health/ready`. No use `docker compose down --volumes` en un despliegue que
+deba conservar datos. Detalle reproducible: `docs/DGII_REGISTRY_QA_RUNBOOK.md`.
+
 ```bash
 openssl rand -base64 24
 ```
@@ -236,11 +250,11 @@ destruyen al terminar. No cargan el padrón oficial.
 | `KORVENTIS_DGII_PGHOST` / `PGPORT` / `PGUSER` / `PGDATABASE` | Lo inyecta Compose; no use una URL única. |
 | `KORVENTIS_DGII_MODE` | `shared` o `local`. |
 | `KORVENTIS_DGII_PUBLISH_PORT` | Puerto loopback del API (default `8080`). |
-| `KORVENTIS_DGII_AUTO_IMPORT` | Ignorado; el servicio no descarga al arrancar. |
-| `KORVENTIS_DGII_ALLOW_REMOTE` | Debe permanecer en false. `--url` está deshabilitado. |
-| `KORVENTIS_DGII_IMPORT_MIN_RECORDS` | Mínimo de filas aceptadas (default 1; subir antes de una carga oficial). |
-| `KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO` | Tope de rechazos / total (default 0.001). |
-| `KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS` | Espera máxima del candado en `restore-previous` (default 5000). |
+| `KORVENTIS_DGII_AUTO_IMPORT` | Compose lo fija en `false`. El servicio no descarga al arrancar. |
+| `KORVENTIS_DGII_ALLOW_REMOTE` | Compose lo fija en `false`. `--url` está deshabilitado. |
+| `KORVENTIS_DGII_IMPORT_MIN_RECORDS` | Mínimo de filas aceptadas. SHARED lo exige en `.env` (QA oficial: 750000). LOCAL default `1` solo si se omite. Un valor en `.env` no llega al contenedor si no está en `environment` del YAML. |
+| `KORVENTIS_DGII_IMPORT_MAX_REJECT_RATIO` | Tope de rechazos / total (default 0.001). Se interpola hacia el contenedor. |
+| `KORVENTIS_DGII_RESTORE_LOCK_TIMEOUT_MS` | Espera máxima del candado en `restore-previous` (default 5000). Se interpola hacia el contenedor. |
 
 PostgreSQL no tiene `ports:` hacia el host. El API escucha `127.0.0.1` en el
 host y `0.0.0.0:8080` solo dentro del contenedor.

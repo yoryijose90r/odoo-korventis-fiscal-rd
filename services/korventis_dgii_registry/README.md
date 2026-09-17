@@ -19,4 +19,5 @@ python -m korventis_dgii_registry import --zip FILE.zip --activate
 python -m korventis_dgii_registry restore-previous
 ```
 
-See `docs/DGII_REGISTRY_SERVICE.md` for install, import policy, backup and rollback.
+See `docs/DGII_REGISTRY_SERVICE.md` for install and import policy.
+See `docs/DGII_REGISTRY_QA_RUNBOOK.md` for the QA-tested deploy and import sequence.

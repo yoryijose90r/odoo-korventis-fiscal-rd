@@ -165,6 +165,44 @@ def test_ready_reports_active_registry(db_conninfo, monkeypatch):
     _assert_no_secrets(payload, db_conninfo)
 
 
+def test_ready_staging_with_rows_is_pending(db_conninfo, monkeypatch):
+    settings = _settings(db_conninfo, monkeypatch)
+    with connect(db_conninfo) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dgii_rnc_version (
+                    name, state, source_url, source_filename, archive_sha256,
+                    imported_at, record_count
+                ) VALUES (
+                    'official-staging', 'staging', 'https://example.invalid/s.zip', 's.zip',
+                    %s, now(), 2
+                )
+                RETURNING id
+                """,
+                (("s" + "1" * 64)[:64],),
+            )
+            version_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO dgii_rnc (
+                    version_id, rnc, rnc_normalizado, razon_social,
+                    razon_social_normalizada, estado, regimen_pago, fecha_importacion
+                ) VALUES
+                    (%s, '131098191', '131098191', 'STAGING A', 'STAGING A',
+                     'ACTIVO', 'NORMAL', now()),
+                    (%s, '131098192', '131098192', 'STAGING B', 'STAGING B',
+                     'ACTIVO', 'NORMAL', now())
+                """,
+                (version_id, version_id),
+            )
+        conn.commit()
+    payload = probe_readiness(settings)
+    assert payload["status"] == "ok"
+    assert payload["registry"] == "pending"
+    _assert_no_secrets(payload, db_conninfo)
+
+
 def test_ready_empty_active_is_unavailable(db_conninfo, monkeypatch):
     settings = _settings(db_conninfo, monkeypatch)
     with connect(db_conninfo) as conn:

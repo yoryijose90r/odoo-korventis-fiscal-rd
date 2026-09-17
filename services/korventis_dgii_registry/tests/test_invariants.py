@@ -47,3 +47,13 @@ def test_activate_does_not_rewrite_record_count():
     assert "uncompressed size exceeded during read" in (
         ROOT / "korventis_dgii_registry" / "archive.py"
     ).read_text(encoding="utf-8")
+
+
+def test_import_cli_keeps_dry_run_validate_only_and_activate_exclusive():
+    text = (ROOT / "korventis_dgii_registry" / "__main__.py").read_text(encoding="utf-8")
+    assert "add_mutually_exclusive_group()" in text
+    assert "--validate-only" in text
+    assert "--activate" in text
+    assert "--dry-run" in text
+    assert "persist = not bool(args.dry_run)" in text
+    assert "activate = bool(args.activate)" in text
