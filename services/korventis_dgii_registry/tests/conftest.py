@@ -10,6 +10,7 @@ import uuid
 
 import psycopg
 import pytest
+from psycopg import sql
 
 
 def docker_available():
@@ -33,28 +34,47 @@ def _free_port():
     return port
 
 
-def _wait_postgres(url, timeout=60):
+def connect(conninfo):
+    return psycopg.connect(**conninfo)
+
+
+def _wait_postgres(conninfo, timeout=60):
     deadline = time.time() + timeout
-    last_error = None
+    last_error_type = None
     while time.time() < deadline:
         try:
-            with psycopg.connect(url, connect_timeout=3) as conn:
+            with connect(conninfo) as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
             return
         except Exception as exc:  # noqa: BLE001
-            last_error = exc
+            last_error_type = type(exc).__name__
             time.sleep(1)
-    raise RuntimeError("PostgreSQL did not become ready: %s" % last_error)
+    raise RuntimeError("PostgreSQL did not become ready (%s)" % last_error_type)
+
+
+def recreate_database(conninfo, dbname):
+    admin = dict(conninfo, dbname="postgres")
+    ident = sql.Identifier(dbname)
+    with psycopg.connect(**admin, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (dbname,),
+            )
+            cur.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(ident))
+            cur.execute(sql.SQL("CREATE DATABASE {}").format(ident))
+    return dict(conninfo, dbname=dbname)
 
 
 @pytest.fixture
-def registry_db(database_url):
+def db_conninfo(database_conninfo):
     from korventis_dgii_registry.migrate import apply_migrations
 
-    apply_migrations(database_url)
-    yield database_url
-    with psycopg.connect(database_url) as conn:
+    apply_migrations(database_conninfo)
+    yield database_conninfo
+    with connect(database_conninfo) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -67,15 +87,21 @@ def registry_db(database_url):
 
 
 @pytest.fixture(scope="session")
-def database_url():
-    env_url = os.environ.get("KORVENTIS_DGII_TEST_DATABASE_URL", "").strip()
-    if env_url:
-        yield env_url
+def database_conninfo():
+    env_host = os.environ.get("KORVENTIS_DGII_TEST_PGHOST", "").strip()
+    if env_host:
+        yield {
+            "host": env_host,
+            "port": int(os.environ.get("KORVENTIS_DGII_TEST_PGPORT", "5432")),
+            "user": os.environ["KORVENTIS_DGII_TEST_PGUSER"],
+            "password": os.environ["KORVENTIS_DGII_TEST_PGPASSWORD"],
+            "dbname": os.environ["KORVENTIS_DGII_TEST_PGDATABASE"],
+        }
         return
     if not docker_available():
         pytest.skip(
-            "Docker is required for schema tests unless "
-            "KORVENTIS_DGII_TEST_DATABASE_URL is set"
+            "Docker is required for schema tests unless discrete "
+            "KORVENTIS_DGII_TEST_PG* variables are set"
         )
     name = "korventis-dgii-schema-test-%s" % uuid.uuid4().hex[:8]
     password = "test-only-not-production"
@@ -103,13 +129,16 @@ def database_url():
         check=False,
     )
     if run.returncode != 0:
-        pytest.fail("docker run postgres failed: %s" % (run.stderr or run.stdout))
-    url = (
-        "postgresql://korventis_dgii:%s@127.0.0.1:%s/korventis_dgii_test"
-        % (password, port)
-    )
+        pytest.fail("docker run postgres failed")
+    conninfo = {
+        "host": "127.0.0.1",
+        "port": port,
+        "user": "korventis_dgii",
+        "password": password,
+        "dbname": "korventis_dgii_test",
+    }
     try:
-        _wait_postgres(url)
-        yield url
+        _wait_postgres(conninfo)
+        yield conninfo
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)

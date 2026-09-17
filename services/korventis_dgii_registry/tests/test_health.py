@@ -1,4 +1,4 @@
-"""Config and health payload tests. No ZIP download."""
+"""Config and health payload tests. No ZIP download. No secrets in HTTP."""
 
 from __future__ import annotations
 
@@ -8,48 +8,95 @@ from http.client import HTTPConnection
 
 import pytest
 
-from korventis_dgii_registry.config import Settings, redact_database_url
-from korventis_dgii_registry.server import build_health_payload, make_server
+from korventis_dgii_registry.config import Settings
+from korventis_dgii_registry.migrate import probe_readiness
+from korventis_dgii_registry.server import make_server
+from tests.conftest import connect
 
 
-def test_redact_database_url():
-    raw = "postgresql://korventis_dgii:super-secret@postgres:5432/korventis_dgii"
-    assert "super-secret" not in redact_database_url(raw)
-    assert "korventis_dgii:***" in redact_database_url(raw)
+FORBIDDEN_HEALTH_FRAGMENTS = (
+    "postgresql://",
+    "postgres://",
+    "PGPASSWORD",
+    "Traceback",
+    "File \"",
+    "pghost",
+    "password",
+    "exception",
+    "/app/",
+    "OperationalError",
+)
 
 
-def test_settings_require_database_url(monkeypatch):
-    monkeypatch.delenv("KORVENTIS_DGII_DATABASE_URL", raising=False)
+def _settings(conninfo, monkeypatch, mode="local", port="0", host=None, pgport=None):
+    monkeypatch.setenv("KORVENTIS_DGII_PGHOST", host or conninfo["host"])
+    monkeypatch.setenv("KORVENTIS_DGII_PGPORT", str(pgport or conninfo["port"]))
+    monkeypatch.setenv("KORVENTIS_DGII_PGUSER", conninfo["user"])
+    monkeypatch.setenv("KORVENTIS_DGII_PGPASSWORD", conninfo["password"])
+    monkeypatch.setenv("KORVENTIS_DGII_PGDATABASE", conninfo["dbname"])
+    monkeypatch.setenv("KORVENTIS_DGII_MODE", mode)
+    monkeypatch.setenv("KORVENTIS_DGII_BIND", "127.0.0.1")
+    monkeypatch.setenv("KORVENTIS_DGII_PORT", str(port))
+    return Settings.from_env()
+
+
+def _assert_no_secrets(payload, conninfo):
+    raw = json.dumps(payload)
+    for fragment in FORBIDDEN_HEALTH_FRAGMENTS:
+        assert fragment.lower() not in raw.lower()
+    assert conninfo["password"] not in raw
+    assert conninfo["user"] not in raw
+    assert str(conninfo["host"]) not in raw
+    assert "error" not in payload
+    assert "database" not in payload
+    assert "bind" not in payload
+
+
+def test_settings_require_pg_params(monkeypatch):
+    for name in (
+        "KORVENTIS_DGII_PGHOST",
+        "KORVENTIS_DGII_PGUSER",
+        "KORVENTIS_DGII_PGPASSWORD",
+        "KORVENTIS_DGII_PGDATABASE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     with pytest.raises(SystemExit):
         Settings.from_env()
 
 
 def test_settings_reject_unknown_mode(monkeypatch):
-    monkeypatch.setenv("KORVENTIS_DGII_DATABASE_URL", "postgresql://x:y@localhost/db")
+    monkeypatch.setenv("KORVENTIS_DGII_PGHOST", "localhost")
+    monkeypatch.setenv("KORVENTIS_DGII_PGUSER", "korventis_dgii")
+    monkeypatch.setenv("KORVENTIS_DGII_PGPASSWORD", "unused")
+    monkeypatch.setenv("KORVENTIS_DGII_PGDATABASE", "korventis_dgii")
     monkeypatch.setenv("KORVENTIS_DGII_MODE", "production")
     with pytest.raises(SystemExit):
         Settings.from_env()
 
 
-def test_health_ready_pending_without_active_version(registry_db, monkeypatch):
-    monkeypatch.setenv("KORVENTIS_DGII_DATABASE_URL", registry_db)
+def test_settings_repr_omits_password(monkeypatch):
+    monkeypatch.setenv("KORVENTIS_DGII_PGHOST", "localhost")
+    monkeypatch.setenv("KORVENTIS_DGII_PGUSER", "korventis_dgii")
+    monkeypatch.setenv("KORVENTIS_DGII_PGPASSWORD", "unused-secret")
+    monkeypatch.setenv("KORVENTIS_DGII_PGDATABASE", "korventis_dgii")
     monkeypatch.setenv("KORVENTIS_DGII_MODE", "local")
-    monkeypatch.setenv("KORVENTIS_DGII_BIND", "127.0.0.1")
-    monkeypatch.setenv("KORVENTIS_DGII_PORT", "0")
-    settings = Settings.from_env()
-    payload = build_health_payload(settings)
+    rendered = repr(Settings.from_env())
+    assert "unused-secret" not in rendered
+    assert "pgpassword" not in rendered.lower()
+
+
+def test_health_ready_pending_without_active_version(db_conninfo, monkeypatch):
+    settings = _settings(db_conninfo, monkeypatch)
+    payload = probe_readiness(settings)
     assert payload["status"] == "ok"
-    assert payload["registry"] == "pending"
     assert payload["postgres"] is True
-    assert "super-secret" not in json.dumps(payload)
+    assert payload["schema"] is True
+    assert payload["registry"] == "pending"
+    _assert_no_secrets(payload, db_conninfo)
 
 
-def test_http_health_endpoints(registry_db, monkeypatch):
-    monkeypatch.setenv("KORVENTIS_DGII_DATABASE_URL", registry_db)
-    monkeypatch.setenv("KORVENTIS_DGII_MODE", "shared")
-    monkeypatch.setenv("KORVENTIS_DGII_BIND", "127.0.0.1")
-    monkeypatch.setenv("KORVENTIS_DGII_PORT", "0")
-    settings = Settings.from_env()
+def test_http_health_endpoints_hide_secrets(db_conninfo, monkeypatch):
+    settings = _settings(db_conninfo, monkeypatch, mode="shared")
     httpd = make_server(settings)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -57,17 +104,73 @@ def test_http_health_endpoints(registry_db, monkeypatch):
         host, port = httpd.server_address[:2]
         conn = HTTPConnection(host, port, timeout=5)
         conn.request("GET", "/health")
-        live = json.loads(conn.getresponse().read().decode("utf-8"))
-        assert live["status"] == "ok"
+        live_resp = conn.getresponse()
+        live = json.loads(live_resp.read().decode("utf-8"))
+        assert live_resp.status == 200
+        assert live == {"status": "ok", "service": "korventis-dgii-registry"}
+        _assert_no_secrets(live, db_conninfo)
         conn.request("GET", "/health/ready")
-        ready = json.loads(conn.getresponse().read().decode("utf-8"))
+        ready_resp = conn.getresponse()
+        ready = json.loads(ready_resp.read().decode("utf-8"))
+        assert ready_resp.status == 200
         assert ready["status"] == "ok"
         assert ready["registry"] == "pending"
-        assert ready["mode"] == "shared"
+        assert set(ready) == {"status", "postgres", "schema", "registry"}
+        _assert_no_secrets(ready, db_conninfo)
         conn.request("GET", "/lookup")
         missing = conn.getresponse()
+        missing_body = json.loads(missing.read().decode("utf-8"))
         assert missing.status == 404
+        assert "path" not in missing_body
         conn.close()
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_ready_reports_active_registry(db_conninfo, monkeypatch):
+    settings = _settings(db_conninfo, monkeypatch)
+    with connect(db_conninfo) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dgii_rnc_version (
+                    name, state, source_url, source_filename, archive_sha256, imported_at
+                ) VALUES (
+                    'active-v', 'active', 'https://example.invalid/h.zip', 'h.zip',
+                    %s, now()
+                )
+                """,
+                (("h" + "0" * 64)[:64],),
+            )
+        conn.commit()
+    payload = probe_readiness(settings)
+    assert payload["status"] == "ok"
+    assert payload["registry"] == "active"
+    _assert_no_secrets(payload, db_conninfo)
+
+
+def test_ready_unready_without_postgres_hides_exceptions(db_conninfo, monkeypatch):
+    settings = _settings(db_conninfo, monkeypatch, pgport=1)
+    payload = probe_readiness(settings)
+    assert payload["status"] == "unready"
+    assert payload["postgres"] is False
+    assert payload["schema"] is False
+    assert payload["registry"] == "unavailable"
+    _assert_no_secrets(payload, db_conninfo)
+    raw = json.dumps(payload)
+    assert "could not connect" not in raw.lower()
+    assert "connection refused" not in raw.lower()
+
+
+def test_ready_unready_when_schema_missing(db_conninfo, monkeypatch):
+    from tests.conftest import recreate_database
+
+    fresh = recreate_database(db_conninfo, "korventis_dgii_noschema")
+    settings = _settings(fresh, monkeypatch)
+    payload = probe_readiness(settings)
+    assert payload["status"] == "unready"
+    assert payload["postgres"] is True
+    assert payload["schema"] is False
+    assert payload["registry"] == "unavailable"
+    _assert_no_secrets(payload, fresh)

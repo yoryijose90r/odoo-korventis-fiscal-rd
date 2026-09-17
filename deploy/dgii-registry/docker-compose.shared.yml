@@ -1,8 +1,10 @@
 name: korventis-dgii-shared
 
 # SHARED deploy of the same korventis-dgii-registry image.
-# PostgreSQL is internal only. API is bound to loopback.
+# PostgreSQL has no host ports. API is published only on loopback.
 # Does not download the official DGII ZIP. Does not touch Odoo databases.
+# Later, Odoo from another compose project should join this Docker network
+# and authenticate. Lookup without authentication is not enabled.
 
 services:
   postgres:
@@ -26,7 +28,11 @@ services:
       dockerfile: ../../deploy/dgii-registry/Dockerfile
     image: korventis-dgii-registry:18.0.2.0
     environment:
-      KORVENTIS_DGII_DATABASE_URL: postgresql://korventis_dgii:${KORVENTIS_DGII_POSTGRES_PASSWORD}@postgres:5432/korventis_dgii
+      KORVENTIS_DGII_PGHOST: postgres
+      KORVENTIS_DGII_PGPORT: "5432"
+      KORVENTIS_DGII_PGUSER: korventis_dgii
+      KORVENTIS_DGII_PGPASSWORD: ${KORVENTIS_DGII_POSTGRES_PASSWORD:?Set KORVENTIS_DGII_POSTGRES_PASSWORD in .env}
+      KORVENTIS_DGII_PGDATABASE: korventis_dgii
       KORVENTIS_DGII_BIND: 0.0.0.0
       KORVENTIS_DGII_PORT: "8080"
       KORVENTIS_DGII_MODE: shared

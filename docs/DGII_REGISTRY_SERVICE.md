@@ -1,7 +1,7 @@
-# Servicio `korventis-dgii-registry` (Commit 1)
+# Servicio `korventis-dgii-registry` (Commit 1.1)
 
 Esqueleto del padrón DGII independiente. PostgreSQL `korventis_dgii` no vive
-en las bases Odoo. Este commit **no** descarga el ZIP oficial, **no** migra
+en las bases Odoo. Este servicio **no** descarga el ZIP oficial, **no** migra
 los ~789 577 registros, **no** activa cron y **no** cambia emisión fiscal,
 POS ni e-NCF.
 
@@ -15,8 +15,28 @@ Modalidades: `docker-compose.shared.yml` (SHARED) y `docker-compose.local.yml`
 - Bases Odoo `korventis`, `baruchcafe` y `korventis_fiscal_test`.
 - Tablas del módulo `korventis_partner_dgii` (no se eliminan).
 - Contexto de prueba `korventis_dgii_test_version_id`.
-- Lookup HTTP autenticado (commit posterior).
+- Lookup HTTP (commit posterior; exigirá autenticación por instalación).
 - Publicar PostgreSQL al host o a Internet.
+
+## Salud
+
+`GET /health` solo indica que el proceso responde:
+
+```json
+{"status":"ok","service":"korventis-dgii-registry"}
+```
+
+`GET /health/ready` no incluye URL, usuario, host, contraseñas, trazas ni
+rutas. Códigos:
+
+| HTTP | `registry` | Significado |
+| --- | --- | --- |
+| 200 | `pending` | PostgreSQL y esquema listos; padrón aún vacío (instalación inicial) |
+| 200 | `active` | Hay una versión de padrón `active` |
+| 503 | `unavailable` | PostgreSQL o esquema no operativos |
+
+Un padrón vacío **no** se anuncia como `active`. El servicio arranca en
+`pending` y **no** dispara importaciones.
 
 ## Instalación en un entorno desechable de QA
 
@@ -31,10 +51,10 @@ cd deploy/dgii-registry
 cp env.example .env
 ```
 
-Edite `.env` y ponga una contraseña local (nunca la suba a git):
+Edite `.env` y ponga una contraseña local (nunca la suba a git). Puede
+incluir `@ # / : % ? &`. Evite `$` porque Compose lo interpola.
 
 ```bash
-# ejemplo de generación; pegue el valor en KORVENTIS_DGII_POSTGRES_PASSWORD
 openssl rand -base64 24
 ```
 
@@ -43,10 +63,6 @@ docker compose -f docker-compose.local.yml -p korventis-dgii-disposable up -d --
 curl -sS http://127.0.0.1:8080/health
 curl -sS http://127.0.0.1:8080/health/ready
 ```
-
-`/health` confirma que el proceso responde. `/health/ready` confirma PostgreSQL
-y el esquema. Con padrón vacío el JSON lleva `"registry": "pending"`; eso no
-es un fallo.
 
 SHARED usa la misma imagen:
 
@@ -67,10 +83,21 @@ Invoke-RestMethod http://127.0.0.1:8080/health
 Invoke-RestMethod http://127.0.0.1:8080/health/ready
 ```
 
+## Conexión futura desde Odoo
+
+En esta etapa el API solo se publica en `127.0.0.1` para health de QA. Odoo
+**no** debe consultar el padrón todavía: no hay lookup ni autenticación.
+
+Cuando se autorice el adaptador, Odoo se unirá a la red Docker del proyecto
+(`korventis-dgii-shared_default` o `korventis-dgii-local_default`) como red
+externa y hablará con `registry:8080` **dentro** de esa red. No se publicará
+PostgreSQL. Cada instalación Odoo usará `install_id` + secreto. No habilite
+consultas anónimas.
+
 ## Actualización
 
-El aplicador de migraciones es idempotente. Recrear el contenedor del servicio
-vuelve a aplicar solo archivos SQL nuevos:
+El aplicador de migraciones es idempotente y usa un bloqueo transaccional
+PostgreSQL. Recrear el contenedor del servicio aplica solo archivos SQL nuevos:
 
 ```bash
 cd deploy/dgii-registry
@@ -79,9 +106,8 @@ docker compose -f docker-compose.local.yml -p korventis-dgii-disposable up -d re
 curl -sS http://127.0.0.1:8080/health/ready
 ```
 
-No hace falta `docker volume rm`. El volumen `korventis_dgii_*_pgdata` conserva
-el esquema. Los archivos en `services/korventis_dgii_registry/migrations/` no
-deben reescribirse una vez aplicados; se añade un `002_*.sql`.
+No reescriba `001_initial.sql` en instalaciones que ya lo aplicaron. El
+endurecimiento de RNC está en `002_hardening.sql`.
 
 ## Parada (conserva datos del servicio)
 
@@ -109,9 +135,6 @@ Equivalente manual, mismo alcance:
 docker compose -f docker-compose.local.yml -p korventis-dgii-disposable down --volumes --remove-orphans
 ```
 
-No use `docker volume rm` contra volúmenes de Odoo. No ejecute `dropdb` contra
-bases del ERP.
-
 ## Pruebas del esquema
 
 Desde `services/korventis_dgii_registry`, con Docker disponible:
@@ -128,11 +151,11 @@ destruyen al terminar. No cargan el padrón oficial.
 
 | Variable | Uso |
 | --- | --- |
-| `KORVENTIS_DGII_POSTGRES_PASSWORD` | Interpolación Compose. Obligatorio. |
+| `KORVENTIS_DGII_POSTGRES_PASSWORD` | Contraseña de PostgreSQL. Obligatorio. Fuera de git. |
+| `KORVENTIS_DGII_PGHOST` / `PGPORT` / `PGUSER` / `PGDATABASE` | Lo inyecta Compose; no use una URL única. |
 | `KORVENTIS_DGII_MODE` | `shared` o `local`. |
 | `KORVENTIS_DGII_PUBLISH_PORT` | Puerto loopback del API (default `8080`). |
-| `KORVENTIS_DGII_AUTO_IMPORT` | Ignorado en commit 1; el servicio no descarga. |
-| `KORVENTIS_DGII_DATABASE_URL` | Lo inyecta Compose dentro de la red Docker. |
+| `KORVENTIS_DGII_AUTO_IMPORT` | Ignorado; el servicio no descarga. |
 
 PostgreSQL no tiene `ports:` hacia el host. El API escucha `127.0.0.1` en el
 host y `0.0.0.0:8080` solo dentro del contenedor.

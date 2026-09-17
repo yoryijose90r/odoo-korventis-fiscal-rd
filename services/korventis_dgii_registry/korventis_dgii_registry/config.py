@@ -1,4 +1,4 @@
-"""Environment configuration. Never log secrets."""
+"""Environment configuration. Never log secrets or connection strings."""
 
 from __future__ import annotations
 
@@ -15,33 +15,53 @@ def _as_bool(value, default=False):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def redact_database_url(url):
-    if not url or "://" not in url:
-        return url or ""
-    scheme, rest = url.split("://", 1)
-    if "@" not in rest:
-        return url
-    userinfo, host = rest.split("@", 1)
-    if ":" in userinfo:
-        user = userinfo.split(":", 1)[0]
-        userinfo = "%s:***" % user
-    return "%s://%s@%s" % (scheme, userinfo, host)
+def _require(name):
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise SystemExit("%s is required" % name)
+    return value
 
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str
+    pghost: str
+    pgport: int
+    pguser: str
+    pgpassword: str
+    pgdatabase: str
     bind: str
     port: int
     mode: str
     auto_import: bool
     log_level: str
 
+    def __repr__(self):
+        return (
+            "Settings(pghost=%r, pgport=%r, pguser=%r, pgdatabase=%r, "
+            "bind=%r, port=%r, mode=%r)"
+            % (
+                self.pghost,
+                self.pgport,
+                self.pguser,
+                self.pgdatabase,
+                self.bind,
+                self.port,
+                self.mode,
+            )
+        )
+
+    @property
+    def conninfo(self):
+        return {
+            "host": self.pghost,
+            "port": self.pgport,
+            "user": self.pguser,
+            "password": self.pgpassword,
+            "dbname": self.pgdatabase,
+        }
+
     @classmethod
     def from_env(cls):
-        database_url = os.environ.get("KORVENTIS_DGII_DATABASE_URL", "").strip()
-        if not database_url:
-            raise SystemExit("KORVENTIS_DGII_DATABASE_URL is required")
         mode = os.environ.get("KORVENTIS_DGII_MODE", "local").strip().lower()
         if mode not in ALLOWED_MODES:
             raise SystemExit(
@@ -50,10 +70,15 @@ class Settings:
         bind = os.environ.get("KORVENTIS_DGII_BIND", "127.0.0.1").strip() or "127.0.0.1"
         try:
             port = int(os.environ.get("KORVENTIS_DGII_PORT", "8080"))
+            pgport = int(os.environ.get("KORVENTIS_DGII_PGPORT", "5432"))
         except ValueError:
-            raise SystemExit("KORVENTIS_DGII_PORT must be an integer")
+            raise SystemExit("KORVENTIS_DGII_PORT and KORVENTIS_DGII_PGPORT must be integers")
         return cls(
-            database_url=database_url,
+            pghost=_require("KORVENTIS_DGII_PGHOST"),
+            pgport=pgport,
+            pguser=_require("KORVENTIS_DGII_PGUSER"),
+            pgpassword=_require("KORVENTIS_DGII_PGPASSWORD"),
+            pgdatabase=_require("KORVENTIS_DGII_PGDATABASE"),
             bind=bind,
             port=port,
             mode=mode,

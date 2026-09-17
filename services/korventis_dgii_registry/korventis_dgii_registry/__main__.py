@@ -20,7 +20,7 @@ def main(argv=None):
     settings = Settings.from_env()
     logging.getLogger().setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
     if command == "migrate":
-        applied = apply_migrations(settings.database_url)
+        applied = apply_migrations(settings)
         print("applied: %s" % (applied or "none"))
         return 0
     if command in ("serve", "run"):

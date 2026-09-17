@@ -25,3 +25,10 @@ def test_service_does_not_include_odoo_test_version_context():
 def test_auto_import_defaults_false_in_sql():
     sql = (ROOT / "migrations" / "001_initial.sql").read_text(encoding="utf-8")
     assert "('auto_import_enabled', 'false')" in sql
+
+
+def test_hardening_migration_exists():
+    path = ROOT / "migrations" / "002_hardening.sql"
+    text = path.read_text(encoding="utf-8")
+    assert "dgii_rnc_version_rnc_normalizado_uidx" in text
+    assert "dgii_rnc_rnc_not_blank" in text

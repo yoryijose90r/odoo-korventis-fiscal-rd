@@ -1,7 +1,7 @@
 # korventis-dgii-registry
 
-Independent DGII taxpayer registry service. Commit 1 is the skeleton: versioned
-PostgreSQL schema, env config, health HTTP, SHARED/LOCAL Compose.
+Independent DGII taxpayer registry service. Commit 1.1 hardens health,
+credentials and migrations. Same SHARED/LOCAL image.
 
 It does not download the official ZIP, does not copy Odoo databases, and does
 not write `res.partner`.
