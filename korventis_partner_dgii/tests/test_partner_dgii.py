@@ -7,7 +7,8 @@ from odoo.tests import TransactionCase, tagged
 
 
 from odoo.addons.korventis_partner_dgii.tests.common import (
-    park_active_registry_versions,
+    create_isolated_registry_version,
+    isolated_registry_env,
 )
 
 
@@ -19,33 +20,26 @@ class TestPartnerDgii(TransactionCase):
         cls.env["res.lang"]._activate_lang("es_DO")
         cls.e31 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e31")
         cls.e32 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e32")
-        park_active_registry_versions(cls.env)
-        cls.version = cls.env["korventis.dgii.rnc.version"].sudo().create(
-            {
-                "name": "fixture.csv",
-                "state": "active",
-                "source_url": "https://dgii.gov.do/fixture.zip",
-                "source_filename": "fixture.csv",
-                "archive_sha256": "a" * 64,
-                "imported_at": fields.Datetime.now(),
-                "activated_at": fields.Datetime.now(),
-                "record_count": 2,
-            }
+
+    def setUp(self):
+        super().setUp()
+        self.version = create_isolated_registry_version(
+            self.env, "fixture.csv", record_count=2
         )
-        cls.active_record = cls._registry_record(
+        self.env = isolated_registry_env(self.env, self.version)
+        self.active_record = self._registry_record(
             "101000001",
             "PORTAL DOMINICANA SRL",
             "ACTIVO",
         )
-        cls.suspended_record = cls._registry_record(
+        self.suspended_record = self._registry_record(
             "00114272360",
             "PERSONA SUSPENDIDA",
             "SUSPENDIDO",
         )
 
-    @classmethod
-    def _registry_record(cls, rnc, name, status):
-        return cls.env["korventis.dgii.rnc"].sudo().create(
+    def _registry_record(self, rnc, name, status):
+        return self.env["korventis.dgii.rnc"].sudo().create(
             {
                 "rnc": rnc,
                 "rnc_normalizado": rnc,
@@ -55,7 +49,7 @@ class TestPartnerDgii(TransactionCase):
                 "estado": status,
                 "regimen_pago": "NORMAL",
                 "fecha_importacion": fields.Datetime.now(),
-                "version_padron_id": cls.version.id,
+                "version_padron_id": self.version.id,
             }
         )
 

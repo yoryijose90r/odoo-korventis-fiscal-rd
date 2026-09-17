@@ -29,10 +29,8 @@ Módulos: fiscal `18.0.1.3.1`, padrón `18.0.1.1.0`.
 ```
 
 - [ ] La suite del módulo termina en verde (no basta `compileall`).
-- [ ] `test_wizard_flow` pasa con fixtures locales (no depende del id 61).
-- [ ] Si `korventis_fiscal_test` ya tiene el padrón oficial (~789 mil filas),
-      `TestDgiiImporter` se omite a propósito; no borrar esa versión para
-      forzar esos tests.
+- [ ] `test_wizard_flow` pasa con fixtures locales en `staging` (no depende de un id de versión).
+- [ ] Con padrón oficial cargado, la suite no crea una segunda versión `active` ni omite `TestDgiiImporter`.
 
 ## Padrón (si ya hay importación QA)
 

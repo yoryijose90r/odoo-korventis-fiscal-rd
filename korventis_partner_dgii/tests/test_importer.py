@@ -16,7 +16,8 @@ from odoo.addons.korventis_partner_dgii.services.importer import (
     DgiiRegistryImporter,
 )
 from odoo.addons.korventis_partner_dgii.tests.common import (
-    official_registry_present,
+    protect_large_registry_versions,
+    unique_test_sha256,
 )
 
 
@@ -30,16 +31,12 @@ SOURCE_URL = (
 class TestDgiiImporter(TransactionCase):
     def setUp(self):
         super().setUp()
-        if official_registry_present(self.env):
-            self.skipTest(
-                "Los ZIP de fixture son pequeños y no pueden activarse contra "
-                "un padrón oficial ya cargado. Use una base sin importación "
-                "real para esta clase."
-            )
         parameters = self.env["ir.config_parameter"].sudo()
         parameters.set_param("korventis_partner_dgii.minimum_records", "1")
-        parameters.set_param("korventis_partner_dgii.minimum_volume_ratio", "0.01")
+        parameters.set_param("korventis_partner_dgii.minimum_volume_ratio", "0")
         parameters.set_param("korventis_partner_dgii.maximum_volume_ratio", "100")
+        patcher = protect_large_registry_versions(self.env)
+        self.addCleanup(patcher.stop)
 
     def _csv_bytes(self, rows, headers=None):
         output = io.StringIO(newline="")
@@ -98,13 +95,17 @@ class TestDgiiImporter(TransactionCase):
         ]
 
     def _active_version(self):
-        version = self.env["korventis.dgii.rnc.version"].sudo().create(
+        Version = self.env["korventis.dgii.rnc.version"].sudo()
+        version = Version.search([("state", "=", "active")], limit=1)
+        if version:
+            return version
+        version = Version.create(
             {
                 "name": "old.csv",
                 "state": "active",
                 "source_url": SOURCE_URL,
                 "source_filename": "old.csv",
-                "archive_sha256": "f" * 64,
+                "archive_sha256": unique_test_sha256(),
                 "imported_at": fields.Datetime.now(),
                 "activated_at": fields.Datetime.now(),
                 "record_count": 1,
@@ -187,26 +188,28 @@ class TestDgiiImporter(TransactionCase):
         self.assertEqual(run.accepted_count, 1)
 
     def test_duplicate_identifiers_fail_import(self):
+        Version = self.env["korventis.dgii.rnc.version"]
+        original_active = Version.search([("state", "=", "active")])
         rows = self._valid_rows()
         rows.append(list(rows[0]))
         path = self._zip_path([("RNC_Contribuyentes.csv", self._csv_bytes(rows))])
         run = self._run_path(path)
         self.assertEqual(run.state, "failed")
-        self.assertFalse(
-            self.env["korventis.dgii.rnc.version"].search(
-                [("state", "=", "active")]
-            )
+        self.assertEqual(
+            Version.search([("state", "=", "active")]),
+            original_active,
         )
 
     def test_corrupt_zip_fails_and_preserves_active_version(self):
         old = self._active_version()
+        record_count = old.record_count
         descriptor, path = tempfile.mkstemp(suffix=".zip")
         os.write(descriptor, b"not a zip")
         os.close(descriptor)
         run = self._run_path(path)
         self.assertEqual(run.state, "failed")
         self.assertEqual(old.state, "active")
-        self.assertEqual(old.record_count, 1)
+        self.assertEqual(old.record_count, record_count)
 
     def test_zip_with_unexpected_files_is_rejected(self):
         path = self._zip_path(
@@ -248,6 +251,7 @@ class TestDgiiImporter(TransactionCase):
 
     def test_activation_failure_rolls_back_candidate_and_preserves_old(self):
         old = self._active_version()
+        version_ids = set(self.env["korventis.dgii.rnc.version"].search([]).ids)
         path = self._zip_path(
             [("RNC_Contribuyentes.csv", self._csv_bytes(self._valid_rows()))]
         )
@@ -260,8 +264,8 @@ class TestDgiiImporter(TransactionCase):
         self.assertEqual(run.state, "failed")
         self.assertEqual(old.state, "active")
         self.assertEqual(
-            self.env["korventis.dgii.rnc.version"].search_count([]),
-            1,
+            set(self.env["korventis.dgii.rnc.version"].search([]).ids),
+            version_ids,
         )
 
     def test_identical_hash_is_not_imported_again(self):
@@ -294,10 +298,8 @@ class TestDgiiImporter(TransactionCase):
         )
         self.assertEqual(first.version_id.state, "previous")
         self.assertEqual(second.version_id.state, "active")
-        self.assertEqual(
-            self.env["korventis.dgii.rnc.version"].search_count([]),
-            2,
-        )
+        self.assertTrue(first.version_id.exists())
+        self.assertTrue(second.version_id.exists())
         first.version_id.action_restore_previous()
         self.assertEqual(first.version_id.state, "active")
         self.assertEqual(second.version_id.state, "previous")

@@ -5,13 +5,14 @@ from odoo.tests import TransactionCase, tagged
 
 
 from odoo.addons.korventis_partner_dgii.tests.common import (
-    park_active_registry_versions,
+    create_isolated_registry_version,
+    isolated_registry_env,
 )
 
 
 @tagged("post_install", "-at_install")
 class TestDgiiWizardIntegration(TransactionCase):
-    """Portable wizard flow. Fixtures are local; they do not use QA version 61."""
+    """Portable wizard flow. Fixtures stay in staging and never demote the official padrón."""
 
     @classmethod
     def setUpClass(cls):
@@ -20,35 +21,28 @@ class TestDgiiWizardIntegration(TransactionCase):
         cls.e31 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e31")
         cls.e32 = cls.env.ref("korventis_l10n_do_fiscal.document_type_e32")
         cls.country_do = cls.env.ref("base.do")
-        park_active_registry_versions(cls.env)
-        cls.version = cls.env["korventis.dgii.rnc.version"].sudo().create(
-            {
-                "name": "wizard-fixture.csv",
-                "state": "active",
-                "source_url": "https://dgii.gov.do/wizard-fixture.zip",
-                "source_filename": "wizard-fixture.csv",
-                "archive_sha256": "aa" + ("11" * 31),
-                "imported_at": fields.Datetime.now(),
-                "activated_at": fields.Datetime.now(),
-                "record_count": 2,
-            }
+
+    def setUp(self):
+        super().setUp()
+        self.version = create_isolated_registry_version(
+            self.env, "wizard-fixture.csv", record_count=2
         )
-        cls.company_record = cls._registry_record(
+        self.env = isolated_registry_env(self.env, self.version)
+        self.company_record = self._registry_record(
             "131998877",
             "KORVENTIS WIZARD ACME SRL",
             "ACTIVO",
             activity="COMERCIO",
         )
-        cls.person_record = cls._registry_record(
+        self.person_record = self._registry_record(
             "00199887766",
             "KORVENTIS WIZARD JUANA TEST",
             "SUSPENDIDO",
             activity="SERVICIOS PROFESIONALES",
         )
 
-    @classmethod
-    def _registry_record(cls, rnc, name, status, activity="SERVICIOS"):
-        return cls.env["korventis.dgii.rnc"].sudo().create(
+    def _registry_record(self, rnc, name, status, activity="SERVICIOS"):
+        return self.env["korventis.dgii.rnc"].sudo().create(
             {
                 "rnc": rnc,
                 "rnc_normalizado": rnc,
@@ -58,7 +52,7 @@ class TestDgiiWizardIntegration(TransactionCase):
                 "estado": status,
                 "regimen_pago": "NORMAL",
                 "fecha_importacion": fields.Datetime.now(),
-                "version_padron_id": cls.version.id,
+                "version_padron_id": self.version.id,
             }
         )
 
@@ -70,7 +64,13 @@ class TestDgiiWizardIntegration(TransactionCase):
         )
 
     def test_wizard_creates_unique_spanish_e31_contact_from_active_registry(self):
-        self.assertNotEqual(self.version.id, 61)
+        self.assertEqual(self.version.state, "staging")
+        self.assertNotIn(
+            self.version.id,
+            self.env["korventis.dgii.rnc.version"].search(
+                [("state", "=", "active")]
+            ).ids,
+        )
         existing = self.env["res.partner"].create(
             {
                 "name": "KORVENTIS WIZARD ACME Contacto",

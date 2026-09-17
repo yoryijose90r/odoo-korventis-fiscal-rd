@@ -6,7 +6,8 @@ from odoo.addons.korventis_l10n_do_fiscal.tests.common import (
     KorventisFiscalCommon,
 )
 from odoo.addons.korventis_partner_dgii.tests.common import (
-    park_active_registry_versions,
+    create_isolated_registry_version,
+    isolated_registry_env,
 )
 
 
@@ -16,20 +17,14 @@ class TestPartnerDgiiFiscalIntegration(KorventisFiscalCommon):
     def setUpClass(cls):
         super().setUpClass()
         cls.env["res.lang"]._activate_lang("es_DO")
-        park_active_registry_versions(cls.env)
-        cls.version = cls.env["korventis.dgii.rnc.version"].sudo().create(
-            {
-                "name": "fiscal-integration.csv",
-                "state": "active",
-                "source_url": "https://dgii.gov.do/fiscal-integration.zip",
-                "source_filename": "fiscal-integration.csv",
-                "archive_sha256": "b" * 64,
-                "imported_at": fields.Datetime.now(),
-                "activated_at": fields.Datetime.now(),
-                "record_count": 1,
-            }
+
+    def setUp(self):
+        super().setUp()
+        self.version = create_isolated_registry_version(
+            self.env, "fiscal-integration.csv", record_count=1
         )
-        cls.registry_record = cls.env["korventis.dgii.rnc"].sudo().create(
+        self.env = isolated_registry_env(self.env, self.version)
+        self.registry_record = self.env["korventis.dgii.rnc"].sudo().create(
             {
                 "rnc": "131000099",
                 "rnc_normalizado": "131000099",
@@ -38,7 +33,7 @@ class TestPartnerDgiiFiscalIntegration(KorventisFiscalCommon):
                 "estado": "ACTIVO",
                 "regimen_pago": "NORMAL",
                 "fecha_importacion": fields.Datetime.now(),
-                "version_padron_id": cls.version.id,
+                "version_padron_id": self.version.id,
             }
         )
 

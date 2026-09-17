@@ -31,7 +31,8 @@ from odoo.addons.korventis_partner_dgii.services.schema import (
     pg_table_exists,
 )
 from odoo.addons.korventis_partner_dgii.tests.common import (
-    park_active_registry_versions,
+    unused_test_identification,
+    unique_test_sha256,
 )
 
 
@@ -85,23 +86,26 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
         self.assertTrue(isinstance(first, list))
 
     def test_c_upgrade_helpers_preserve_registry_and_partners(self):
-        park_active_registry_versions(self.env)
-        version = self.env["korventis.dgii.rnc.version"].sudo().create(
-            {
-                "name": "preserve.csv",
-                "state": "active",
-                "source_url": PRIMARY_DGII_URL,
-                "source_filename": "preserve.csv",
-                "archive_sha256": "c" * 64,
-                "imported_at": datetime(2026, 9, 16, 5, 0, 0),
-                "activated_at": datetime(2026, 9, 16, 5, 0, 0),
-                "record_count": 1,
-            }
-        )
+        Version = self.env["korventis.dgii.rnc.version"].sudo()
+        version = Version.search([("state", "=", "active")], limit=1)
+        if not version:
+            version = Version.create(
+                {
+                    "name": "preserve.csv",
+                    "state": "active",
+                    "source_url": PRIMARY_DGII_URL,
+                    "source_filename": "preserve.csv",
+                    "archive_sha256": unique_test_sha256(),
+                    "imported_at": datetime(2026, 9, 16, 5, 0, 0),
+                    "activated_at": datetime(2026, 9, 16, 5, 0, 0),
+                    "record_count": 1,
+                }
+            )
+        identification = unused_test_identification(self.env)
         record = self.env["korventis.dgii.rnc"].sudo().create(
             {
-                "rnc": "101000077",
-                "rnc_normalizado": "101000077",
+                "rnc": identification,
+                "rnc_normalizado": identification,
                 "razon_social": "CLIENTE CONSERVADO",
                 "razon_social_normalizada": "CLIENTE CONSERVADO",
                 "estado": "ACTIVO",
@@ -113,7 +117,7 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
         partner = self.env["res.partner"].create(
             {
                 "name": "Contacto conservado",
-                "vat": "101000077",
+                "vat": identification,
                 "country_id": self.env.ref("base.do").id,
             }
         )
@@ -125,11 +129,12 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
                 "version_id": version.id,
             }
         )
+        official_state = version.state
         hooks.upgrade_module(self.env, "18.0.1.0.0")
-        self.assertEqual(version.state, "active")
+        self.assertEqual(version.state, official_state)
         self.assertTrue(record.exists())
         self.assertTrue(partner.exists())
-        self.assertEqual(partner.vat, "101000077")
+        self.assertEqual(partner.vat, identification)
         self.assertTrue(run.exists())
 
     def test_d_database_isolation_contract(self):
@@ -166,10 +171,10 @@ class TestPartnerDgiiInstallUpgrade(TransactionCase):
             "record_count": 1,
         }
         self.env["korventis.dgii.rnc.version"].sudo().create(
-            dict(vals, archive_sha256="d" * 64)
+            dict(vals, archive_sha256=unique_test_sha256())
         )
         self.env["korventis.dgii.rnc.version"].sudo().create(
-            dict(vals, archive_sha256="e" * 64, name="dup-2.csv")
+            dict(vals, archive_sha256=unique_test_sha256(), name="dup-2.csv")
         )
         with self.assertRaises(RuntimeError):
             hooks.validate_upgrade_preconditions(self.env.cr)

@@ -4,6 +4,9 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.addons.korventis_partner_dgii.services.normalization import (
     normalize_identification,
 )
+from odoo.addons.korventis_partner_dgii.services.schema import (
+    REGISTRY_TEST_VERSION_CONTEXT,
+)
 
 
 class ResPartner(models.Model):
@@ -116,10 +119,18 @@ class ResPartner(models.Model):
         return partners.commercial_partner_id
 
     @api.model
+    def _korventis_registry_record_selectable(self, registry_record):
+        version = registry_record.version_padron_id
+        if version.state == "active":
+            return True
+        test_version_id = self.env.context.get(REGISTRY_TEST_VERSION_CONTEXT)
+        return bool(test_version_id) and version.id == int(test_version_id)
+
+    @api.model
     def korventis_create_from_dgii(self, registry_record):
         self._korventis_check_lookup_access()
         registry_record.ensure_one()
-        if registry_record.version_padron_id.state != "active":
+        if not self._korventis_registry_record_selectable(registry_record):
             raise UserError(
                 _("El resultado seleccionado ya no pertenece al padrón activo.")
             )

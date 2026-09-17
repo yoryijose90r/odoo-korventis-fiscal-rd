@@ -35,6 +35,10 @@ EXPECTED_TABLES = (
     "korventis_dgii_import_run",
 )
 
+# Tests may point lookup at a staging fixture without demoting the official
+# active padrón. Production flows never set this context key.
+REGISTRY_TEST_VERSION_CONTEXT = "korventis_dgii_test_version_id"
+
 CONFIG_DEFAULTS = {
     "korventis_partner_dgii.source_url": (
         "https://dgii.gov.do/app/WebApps/Consultas/RNC/RNC_CONTRIBUYENTES.zip"

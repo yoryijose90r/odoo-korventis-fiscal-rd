@@ -9,6 +9,7 @@ from odoo.addons.korventis_partner_dgii.services.normalization import (
     normalize_name,
 )
 from odoo.addons.korventis_partner_dgii.services.schema import (
+    REGISTRY_TEST_VERSION_CONTEXT,
     ensure_custom_indexes,
 )
 
@@ -93,13 +94,14 @@ class KorventisDgiiRnc(models.Model):
                 ")"
             )
             filter_parameters = [escape_like(normalized_name) + "%", normalized_name]
+        version_clause, version_parameters = self._search_registry_version_filter()
         self.env.cr.execute(
             f"""
             SELECT r.id
               FROM korventis_dgii_rnc r
               JOIN korventis_dgii_rnc_version v
                 ON v.id = r.version_padron_id
-             WHERE v.state = 'active'
+             WHERE {version_clause}
                AND {where}
              ORDER BY
                    CASE WHEN r.rnc_normalizado = %s
@@ -109,6 +111,17 @@ class KorventisDgiiRnc(models.Model):
                    r.rnc
              LIMIT %s
             """,
-            tuple(filter_parameters + [normalized_id, normalized_name, limit]),
+            tuple(
+                version_parameters
+                + filter_parameters
+                + [normalized_id, normalized_name, limit]
+            ),
         )
         return self.browse([row[0] for row in self.env.cr.fetchall()])
+
+    @api.model
+    def _search_registry_version_filter(self):
+        test_version_id = self.env.context.get(REGISTRY_TEST_VERSION_CONTEXT)
+        if test_version_id:
+            return "v.id = %s", [int(test_version_id)]
+        return "v.state = %s", ["active"]
