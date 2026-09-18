@@ -4,7 +4,7 @@
 {
     "name": "Korventis Fiscal RD",
     "summary": "Núcleo fiscal dominicano (tipos, secuencias, documentos) para Odoo 18 Community",
-    "version": "18.0.1.3.1",
+    "version": "18.0.1.3.3",
     "category": "Accounting/Localizations",
     "author": "Korventis",
     "website": "https://github.com/yoryijose90r/odoo-korventis-fiscal-rd",
@@ -27,8 +27,11 @@
         "views/res_company_views.xml",
         "views/account_move_views.xml",
         "views/menus.xml",
+        "views/account_menu.xml",
+        "data/admin_access.xml",
     ],
+    "post_init_hook": "post_init_hook",
     "installable": True,
-    "application": False,
+    "application": True,
     "auto_install": False,
 }

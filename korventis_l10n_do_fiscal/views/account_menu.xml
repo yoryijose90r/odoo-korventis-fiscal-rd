@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Keep the standard Accounting XML ID. Move it to the home/app switcher
+         so it is independent of Facturación (account.menu_finance). This is not
+         a second menu: the same record is reused. Groups stay on the standard
+         menu (account.group_account_readonly). -->
+    <record id="account.menu_finance_entries" model="ir.ui.menu">
+        <field name="parent_id" eval="False"/>
+        <field name="sequence">55</field>
+    </record>
+</odoo>

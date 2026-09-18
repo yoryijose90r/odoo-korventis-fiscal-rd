@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Do not write base.user_admin via <record>: that XML ID is noupdate in
+         base, so Odoo 18 skips the write on -u. Call the ORM helper instead.
+         This function runs on install and on every module update. -->
+    <function model="res.users"
+              name="_korventis_ensure_initial_admin_access"
+              eval="[]"/>
+</odoo>

@@ -2,8 +2,7 @@
 <odoo>
     <menuitem id="menu_korventis_fiscal_root"
               name="Korventis Fiscal RD"
-              parent="account.menu_finance"
-              sequence="80"
+              sequence="65"
               groups="group_fiscal_user"/>
     <menuitem id="menu_korventis_fiscal_document"
               name="Documentos fiscales"
